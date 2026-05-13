@@ -148,6 +148,9 @@ enum ActivityCode {
 
     DISPLAY_STOCK('DISPLAY_STOCK'),
 
+    // Reason for Shortage Qty Under Receipt
+    SHORTAGE_QTY_UNDER_RECEIPT('SHORTAGE_QTY_UNDER_RECEIPT'),
+
     NONE('NONE')
 
     final String id
@@ -232,7 +235,9 @@ enum ActivityCode {
                 DELIVERY_TYPE_WILL_CALL,
 
                 TRACK_INTERNAL_TRANSACTIONS,
-                DISPLAY_STOCK
+                DISPLAY_STOCK,
+
+                SHORTAGE_QTY_UNDER_RECEIPT,
         ]
     }
 
