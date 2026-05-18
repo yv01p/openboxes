@@ -353,6 +353,9 @@ class StockTransferService {
 
         createStockTransferTransaction(stockTransfer, order)
 
+        // if (location is under receipt)
+        //      sendStockTransferNotification() -> fetch users with Stocktransfer notification role -> send
+
         return order
     }
 
