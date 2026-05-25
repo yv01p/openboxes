@@ -276,19 +276,27 @@ response.setHeader('Set-Cookie', JwtService.buildSetCookieHeader('', true))
   - Add `def jwtService` to the service-injection block (alongside existing `def authService`).
   - At the START of `before()` at line 35, BEFORE the existing `authService.currentUser = session.user ?: null` line, insert:
     ```groovy
-    // Phase 0: accept obx_token JWT cookie alongside JSESSIONID
+    // Phase 0: accept obx_token JWT cookie alongside JSESSIONID.
+    // Populate session.user/warehouse from JWT claims so existing safety checks
+    // (deactivated-user, missing-user redirect, disabled-location, location-required)
+    // run uniformly for both auth paths. The `!session.user` guard means a fresh
+    // session takes precedence; the JWT path only fills in when the session is
+    // missing/expired (typical case: server-side session TTL < 8h JWT TTL).
     def tokenCookie = request.cookies?.find { it.name == JwtService.COOKIE_NAME }
-    if (tokenCookie?.value) {
+    if (tokenCookie?.value && !session.user) {
         Map<String, Object> claims = jwtService.validate(tokenCookie.value)
         if (claims) {
             User user = User.get((String) claims.get('sub'))
-            Location location = claims.get('loc') ? Location.get((String) claims.get('loc')) : null
-            authService.setCurrentUser(user)
-            authService.setCurrentLocation(location)
-            return true
+            if (user) {
+                session.user = user
+                session.userName = user.username
+                if (claims.get('loc')) {
+                    session.warehouse = Location.get((String) claims.get('loc'))
+                }
+            }
         }
     }
-    // Fall through to existing session-based logic
+    // Fall through to existing session-based logic — all safety checks run unchanged
     ```
   - Also add the necessary imports at the top of the file:
     ```groovy
@@ -453,7 +461,7 @@ test('Authenticated API call returns 200 (cookie-based auth)', async ({ request 
     headers: { 'Content-Type': 'application/json' },
   });
   expect(loginRes.status()).toBe(200);
-  const response = await request.get('/openboxes/api/dashboard/menu');
+  const response = await request.get('/openboxes/api/users');
   expect(response.status()).toBe(200);
 });
 ```
