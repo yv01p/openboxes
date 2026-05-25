@@ -17,7 +17,7 @@ OpenBoxes today is a Grails 3.3.16 monolith (Java 8, Groovy 2.4, Hibernate 5.2.1
 
 ## 3. Approach
 
-**Strangler-fig with vertical slices.** Each phase is one bounded context migrated end-to-end: schema ownership moves, Spring Boot service stands up, React frontend talks to the new service, Grails counterparts deleted (or marked for later deletion if external Grails callers remain). The Grails monolith shrinks every phase, never grows. Total: one foundation phase + ~12 slice phases + one cleanup phase.
+**Strangler-fig with vertical slices.** Each phase is one bounded context migrated end-to-end: schema ownership moves, Spring Boot service stands up, React frontend talks to the new service, Grails counterparts deleted (or marked for later deletion if external Grails callers remain). The Grails monolith shrinks every phase, never grows. Total: one foundation phase + ~8 slice phases + one cleanup phase.
 
 Alternatives considered and rejected:
 
@@ -35,7 +35,7 @@ Alternatives considered and rejected:
 ### 4.3 Data ownership during transition (§2.3)
 **Shared MariaDB during transition; each new service owns its tables; cross-service reads via direct JDBC from the new service into the shared DB until the table-owning service exists.** When a cross-context dependency's owning service exists (e.g., the Location service is migrated), the read switches from direct JDBC to a service-to-service HTTP call as part of that later slice. Identity and reference data (Location, Product) are prioritized so they don't sit as direct-JDBC dependencies for long.
 
-**Cross-service writes — services are bounded by transactional integrity, not by single responsibility.** Two write paths that today execute in one Grails transaction live in the same Spring Boot service after extraction. Concretely: all warehouse operations that currently write Inventory in a single Grails transaction (cycle count adjustments, shipment receipts, stock movements, replenishments, put-away) live together in `operations-service`. Order / Requisition / Fulfillment / PurchaseOrder and Invoice / Finance share `orders-and-finance-service` because Invoice posting updates Order status atomically. No saga / eventual consistency / 2PC infrastructure is introduced — within each service, transactions remain local.
+**Cross-service writes — services are bounded by transactional integrity, not by single responsibility.** Write paths that today execute in one Grails transaction live in the same Spring Boot service after extraction. Concretely: `operations-service` owns Inventory plus every context that writes Inventory atomically — cycle count adjustments, shipment receipts, stock movements, replenishments, put-away, AND Order / OrderItem / Requisition / Fulfillment / PurchaseOrder (Order receiving writes `InventoryItem` in the same Grails transaction as OrderItem state — see `OrderService.groovy:327-328`). `finance-service` is the lone carve-out: Invoice / InvoiceItem / GL / payment-terms / budget-codes live separately. Invoice posting today updates Order status atomically; after extraction this becomes the design's single eventual-consistency exposure — finance-service emits an "invoice posted" event that operations-service consumes (at-least-once, idempotent) to advance Order status. No saga orchestration / 2PC infrastructure beyond this one event path.
 
 ### 4.4 Auth during coexistence (§2.4)
 **JWT issued by Grails in Phase 0, served as `obx_token` HttpOnly SameSite=Strict cookie alongside the existing `JSESSIONID`. Grails `SecurityInterceptor` accepts both during transition. Phase 2 moves issuance to identity-service; Grails then validates JWTs only. Final state: no session cookies anywhere.** No external OIDC provider; HMAC-HS256 with secret in env var `OPENBOXES_JWT_SECRET`.
@@ -47,7 +47,7 @@ Alternatives considered and rejected:
 | Concern | Choice |
 |---|---|
 | **Backend services** | Spring Boot 3.x, Java 21 LTS, Spring Data JPA + Hibernate 6 |
-| **Grails container runtime** | Stays on Java 8 until Phase 13 deletes Grails entirely |
+| **Grails container runtime** | Stays on Java 8 until Phase 9 deletes Grails entirely |
 | **Build** | Two Gradle wrappers: existing `gradle/wrapper` at 4.10.3 for Grails (unchanged); new `services/gradle/wrapper` at 8.x for Spring Boot services |
 | **Module layout** | All services in this repo under `services/{context}-service/` as Gradle sub-modules of the new `services/` build |
 | **Routing / gateway** | nginx (already in `docker/docker-compose.yml`); one `location` block per service; no separate gateway process |
@@ -68,8 +68,8 @@ Alternatives considered and rejected:
 | 3 | **Location** (Location, LocationGroup, LocationRole, LocationType, LocationStatus) | location-service owns location tables; other services that read location columns switch from direct JDBC to HTTP call |
 | 4 | **Organization** (Organization, Party, PartyRole, PartyType, Supplier, Shipper, Address) | organization-service stands up; admin screens go React |
 | 5 | **Product** (Product, ProductAttribute, ProductPackage, ProductSupplier, ProductCatalog, Category, Tag, UnitOfMeasure, UnitOfMeasureClass, Synonym) | product-service stands up; widest fan-in; biggest reference slice |
-| 6 | **Operations** (Inventory, InventoryItem, InventoryLevel, InventorySnapshot, CycleCount, CycleCountItem, CycleCountRequest, CycleCountCandidate, CycleCountProductSummary, Shipment, ShipmentItem, ShipmentType, ShipmentMethod, ShipmentWorkflow, Receipt, PutAway, StockMovement, StockTransfer, LocalTransfer, Replenishment) | operations-service stands up; every flow that today writes Inventory in a single Grails transaction (cycle count adjustments, shipment receipts, stock movements, replenishments, put-away) is preserved as a local transaction inside the new service; reads Product + Location via HTTP. Largest slice — sub-phase internally as needed (e.g., Inventory primitives first, then operations on top) but the service boundary is single |
-| 7 | **Orders + Finance** (Order, OrderItem, OrderType, OrderAdjustment, OrderSummary, Requisition, RequisitionItem, Fulfillment, FulfillmentItem, PurchaseOrder, Invoice, InvoiceItem, InvoiceType, GlAccount, GlAccountType, PaymentTerm, PaymentMethodType, BudgetCode) | orders-and-finance-service stands up; Order/Requisition/Invoice cross-table writes (e.g., Invoice posting → Order status update) preserved as local transactions; depends on Operations service for any inventory reservation/adjustment, which goes through HTTP |
+| 6 | **Operations** (Inventory, InventoryItem, InventoryLevel, InventorySnapshot, CycleCount, CycleCountItem, CycleCountRequest, CycleCountCandidate, CycleCountProductSummary, Shipment, ShipmentItem, ShipmentType, ShipmentMethod, ShipmentWorkflow, Receipt, PutAway, StockMovement, StockTransfer, LocalTransfer, Replenishment, Order, OrderItem, OrderType, OrderAdjustment, OrderSummary, Requisition, RequisitionItem, Fulfillment, FulfillmentItem, PurchaseOrder) | operations-service stands up; every flow that today writes Inventory in a single Grails transaction (cycle count adjustments, shipment receipts, stock movements, replenishments, put-away, Order receiving) is preserved as a local transaction inside the new service; reads Product + Location via HTTP. Largest slice — sub-phase internally as needed (Inventory primitives first, then operations + orders on top) but the service boundary is single |
+| 7 | **Finance** (Invoice, InvoiceItem, InvoiceType, GlAccount, GlAccountType, PaymentTerm, PaymentMethodType, BudgetCode) | finance-service stands up; Invoice / GL cross-table writes preserved as local transactions; Invoice posting emits an "invoice posted" event consumed by operations-service to advance Order status (eventually consistent — see §4.3). Reads Order metadata from operations-service via HTTP |
 | 8 | **Reporting + dimensional models** (DateDimension, LocationDimension, ProductDimension, TransactionTypeDimension, LotDimension; reporting endpoints; expirationHistory; reorderReport) | reporting-service stands up; read-only consumer of every other service |
 | 9 | Cleanup: by this point every Grails controller that `render(view:'/common/react')` has been deleted as part of its slice (Phases 1-8), so the webpack-generated GSPs have no consumers. Switch webpack output to a standalone `index.html` + `frontend-dist/`; serve via nginx static. Delete `grails-app/`, `grailsw*`, root `build.gradle` (Grails parts), `gradle/wrapper` at 4.10.3, the Grails Docker image, `src/main/groovy/`, `src/integration-test/groovy/`, `src/main/webapp/`. Repo collapses to `services/` + React. Promote `services/gradle/wrapper` to root. | Repository is Java + Spring Boot + React only; CI builds without Grails toolchain; docker-compose runs only Spring Boot services + React (via nginx) + MariaDB |
 
@@ -136,7 +136,7 @@ Each subsequent slice adds one location block at the top of the list (more speci
 
 ### 7.6 Explicitly NOT in Phase 0
 
-- **No frontend build decoupling** (webpack continues to generate `common/react.gsp` and `partialReceiving/create.gsp`; React continues to be hosted by Grails). The 8+ Grails controllers that `render(view: "/common/react")` continue to work unchanged. Decoupling happens late, when most of those controllers have been deleted as part of their slice migrations — see Phase 13.
+- **No frontend build decoupling** (webpack continues to generate `common/react.gsp` and `partialReceiving/create.gsp`; React continues to be hosted by Grails). The 8+ Grails controllers that `render(view: "/common/react")` continue to work unchanged. Decoupling happens late, when most of those controllers have been deleted as part of their slice migrations — see Phase 9.
 - **No OpenAPI spec for existing Grails API**. Grails endpoints are terminal — being deleted. springdoc-openapi gets added per slice on the Spring Boot side.
 - **No shared JWT validation library**. Phase 1 establishes its shape based on one real consumer.
 - **No external OIDC / Keycloak**. HMAC JWT is enough for one developer / no live users.
@@ -145,7 +145,7 @@ Each subsequent slice adds one location block at the top of the list (more speci
 - **No deletion of any Grails code**. Phase 0 is purely additive.
 - **No Java upgrade for the Grails container**. Stays Java 8.
 
-## 8. Per-slice template (Phases 1..12)
+## 8. Per-slice template (Phases 1..8)
 
 Every slice does these steps, in order:
 
@@ -228,8 +228,8 @@ The following load-bearing assumptions were verified against the codebase before
 
 ## 11. Known issues / accepted as out of scope
 
-- **Java 8 EOL on Grails container.** Grails stays on Java 8 until Phase 13. Java 8 has been EOL upstream since 2022 (Oracle commercial support). Eclipse Temurin still provides Java 8 builds. Accepted because (a) no live users — security exposure is local-only; (b) Grails 3.3.16 + Groovy 2.4 fights Java 11+ in subtle ways; (c) the problem deletes itself in Phase 13.
-- **Gradle 4.10.3 on Grails container.** Same logic — stays until Phase 13.
+- **Java 8 EOL on Grails container.** Grails stays on Java 8 until Phase 9. Java 8 has been EOL upstream since 2022 (Oracle commercial support). Eclipse Temurin still provides Java 8 builds. Accepted because (a) no live users — security exposure is local-only; (b) Grails 3.3.16 + Groovy 2.4 fights Java 11+ in subtle ways; (c) the problem deletes itself in Phase 9.
+- **Gradle 4.10.3 on Grails container.** Same logic — stays until Phase 9.
 - **Liquibase `LiquibaseUtil` versioning lives until Grails dies.** New services use their own changelogs and runners; LiquibaseUtil keeps owning the Grails `0.X.x/` folders. The version-folder scheme retires when Grails does.
 - **`SupportButton.jsx` calls HelpScout directly with raw axios.** Out of scope; third-party API; no auth required.
 - **Webpack continues to write GSPs through Phase 8.** Cosmetic only — the GSPs are generated automatically; no manual maintenance.
@@ -243,4 +243,4 @@ The following load-bearing assumptions were verified against the codebase before
 - **GORM-to-JPA mapping for inheritance (User extends Person) is non-trivial.** Phase 2 hits this first. Mitigation: budget extra time for the first JPA inheritance mapping; the pattern is reused for the few other inheritance cases in the domain.
 - **Hibernate 5 / Hibernate 6 sharing a schema may surface naming-strategy gotchas.** Mitigation: explicit `@Column` and `@Table` on every JPA entity matching the existing column names.
 - **External Grails callers may cascade.** Migrating a caller in Phase N to use the Phase 1 service may surface its OWN consumers; the migration tree could grow. Mitigation: when 8b reveals deep chains, accept "keep Grails counterpart alive" and migrate later; don't expand slice scope unboundedly.
-- **One-developer pace.** 13 phases is a multi-year undertaking. Mitigation: each phase has independent value (each one shrinks Grails); pausing between phases is fine; nothing forces continuous work.
+- **One-developer pace.** 10 phases is a multi-year undertaking. Mitigation: each phase has independent value (each one shrinks Grails); pausing between phases is fine; nothing forces continuous work.
