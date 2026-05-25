@@ -35,8 +35,12 @@ Alternatives considered and rejected:
 ### 4.3 Data ownership during transition (§2.3)
 **Shared MariaDB during transition; each new service owns its tables; cross-service reads via direct JDBC from the new service into the shared DB until the table-owning service exists.** When a cross-context dependency's owning service exists (e.g., the Location service is migrated), the read switches from direct JDBC to a service-to-service HTTP call as part of that later slice. Identity and reference data (Location, Product) are prioritized so they don't sit as direct-JDBC dependencies for long.
 
+**Cross-service writes — services are bounded by transactional integrity, not by single responsibility.** Two write paths that today execute in one Grails transaction live in the same Spring Boot service after extraction. Concretely: all warehouse operations that currently write Inventory in a single Grails transaction (cycle count adjustments, shipment receipts, stock movements, replenishments, put-away) live together in `operations-service`. Order / Requisition / Fulfillment / PurchaseOrder and Invoice / Finance share `orders-and-finance-service` because Invoice posting updates Order status atomically. No saga / eventual consistency / 2PC infrastructure is introduced — within each service, transactions remain local.
+
 ### 4.4 Auth during coexistence (§2.4)
 **JWT issued by Grails in Phase 0, served as `obx_token` HttpOnly SameSite=Strict cookie alongside the existing `JSESSIONID`. Grails `SecurityInterceptor` accepts both during transition. Phase 2 moves issuance to identity-service; Grails then validates JWTs only. Final state: no session cookies anywhere.** No external OIDC provider; HMAC-HS256 with secret in env var `OPENBOXES_JWT_SECRET`.
+
+**Service-to-service / Grails-to-service auth: forward the user's `obx_token` cookie.** Grails controllers that call Spring Boot services after their slice migration read the incoming `obx_token` cookie and propagate it on outbound HTTP calls. Spring Boot services calling other Spring Boot services do the same — a small shared `RestClient` configuration reads the cookie from the current request context and adds it to outbound calls. Background jobs (the 13 Quartz jobs, per A20) continue to use direct JDBC against the shared MariaDB until they are themselves migrated; the per-service identity question (for non-user-initiated calls in the post-Grails world) is deferred until a concrete instance emerges.
 
 ## 5. Tech choices
 
@@ -64,14 +68,10 @@ Alternatives considered and rejected:
 | 3 | **Location** (Location, LocationGroup, LocationRole, LocationType, LocationStatus) | location-service owns location tables; other services that read location columns switch from direct JDBC to HTTP call |
 | 4 | **Organization** (Organization, Party, PartyRole, PartyType, Supplier, Shipper, Address) | organization-service stands up; admin screens go React |
 | 5 | **Product** (Product, ProductAttribute, ProductPackage, ProductSupplier, ProductCatalog, Category, Tag, UnitOfMeasure, UnitOfMeasureClass, Synonym) | product-service stands up; widest fan-in; biggest reference slice |
-| 6 | **Inventory core** (Inventory, InventoryItem, InventoryLevel, InventorySnapshot) | inventory-service owns inventory state; reads Product+Location via HTTP |
-| 7 | **CycleCount** (CycleCount, CycleCountItem, CycleCountRequest, CycleCountCandidate, CycleCountProductSummary) | cyclecount-service replaces existing partially-React-owned cycle count flow |
-| 8 | **Shipment + Receiving + PutAway** (Shipment, ShipmentItem, ShipmentType, ShipmentMethod, ShipmentWorkflow, Receipt, PutAway) | shipping-service stands up; Receiving and PutAway React flows talk to it |
-| 9 | **StockMovement + StockTransfer + LocalTransfer + Replenishment** (and the partialReceiving controller paths) | stock-movement-service stands up; the most-React-heavy area moves to its own backend |
-| 10 | **Order + Requisition + Fulfillment** (Order, OrderItem, OrderType, OrderAdjustment, OrderSummary, Requisition, RequisitionItem, Fulfillment, FulfillmentItem) | order-service stands up; PurchaseOrder is included if it doesn't warrant its own slice (revisit at the time) |
-| 11 | **Invoice + Finance** (Invoice, InvoiceItem, InvoiceType, GlAccount, GlAccountType, PaymentTerm, PaymentMethodType, BudgetCode) | finance-service stands up; depends on Order + Shipment already extracted |
-| 12 | **Reporting + dimensional models** (DateDimension, LocationDimension, ProductDimension, TransactionTypeDimension, LotDimension; reporting endpoints; expirationHistory; reorderReport) | reporting-service stands up; read-only consumer of every other service |
-| 13 | Cleanup: by this point every Grails controller that `render(view:'/common/react')` has been deleted as part of its slice (Phases 1-12), so the webpack-generated GSPs have no consumers. Switch webpack output to a standalone `index.html` + `frontend-dist/`; serve via nginx static. Delete `grails-app/`, `grailsw*`, root `build.gradle` (Grails parts), `gradle/wrapper` at 4.10.3, the Grails Docker image, `src/main/groovy/`, `src/integration-test/groovy/`, `src/main/webapp/`. Repo collapses to `services/` + React. Promote `services/gradle/wrapper` to root. | Repository is Java + Spring Boot + React only; CI builds without Grails toolchain; docker-compose runs only Spring Boot services + React (via nginx) + MariaDB |
+| 6 | **Operations** (Inventory, InventoryItem, InventoryLevel, InventorySnapshot, CycleCount, CycleCountItem, CycleCountRequest, CycleCountCandidate, CycleCountProductSummary, Shipment, ShipmentItem, ShipmentType, ShipmentMethod, ShipmentWorkflow, Receipt, PutAway, StockMovement, StockTransfer, LocalTransfer, Replenishment) | operations-service stands up; every flow that today writes Inventory in a single Grails transaction (cycle count adjustments, shipment receipts, stock movements, replenishments, put-away) is preserved as a local transaction inside the new service; reads Product + Location via HTTP. Largest slice — sub-phase internally as needed (e.g., Inventory primitives first, then operations on top) but the service boundary is single |
+| 7 | **Orders + Finance** (Order, OrderItem, OrderType, OrderAdjustment, OrderSummary, Requisition, RequisitionItem, Fulfillment, FulfillmentItem, PurchaseOrder, Invoice, InvoiceItem, InvoiceType, GlAccount, GlAccountType, PaymentTerm, PaymentMethodType, BudgetCode) | orders-and-finance-service stands up; Order/Requisition/Invoice cross-table writes (e.g., Invoice posting → Order status update) preserved as local transactions; depends on Operations service for any inventory reservation/adjustment, which goes through HTTP |
+| 8 | **Reporting + dimensional models** (DateDimension, LocationDimension, ProductDimension, TransactionTypeDimension, LotDimension; reporting endpoints; expirationHistory; reorderReport) | reporting-service stands up; read-only consumer of every other service |
+| 9 | Cleanup: by this point every Grails controller that `render(view:'/common/react')` has been deleted as part of its slice (Phases 1-8), so the webpack-generated GSPs have no consumers. Switch webpack output to a standalone `index.html` + `frontend-dist/`; serve via nginx static. Delete `grails-app/`, `grailsw*`, root `build.gradle` (Grails parts), `gradle/wrapper` at 4.10.3, the Grails Docker image, `src/main/groovy/`, `src/integration-test/groovy/`, `src/main/webapp/`. Repo collapses to `services/` + React. Promote `services/gradle/wrapper` to root. | Repository is Java + Spring Boot + React only; CI builds without Grails toolchain; docker-compose runs only Spring Boot services + React (via nginx) + MariaDB |
 
 The Phase 3+ ordering is a recommendation. After Phase 2 the developer will have first-hand slice experience and may re-order; the per-slice template and the data-ownership model don't depend on the specific order, only on dependencies being satisfied (a slice can't extract before its data dependencies have either been extracted or accepted as shared-DB direct reads).
 
@@ -101,7 +101,10 @@ Each subsequent slice adds one location block at the top of the list (more speci
 
 - Add `io.jsonwebtoken:jjwt-impl:0.11.5` and `jjwt-jackson:0.11.5` to `build.gradle` (Java-8 compatible line).
 - New `JwtService.groovy` (in `grails-app/services/org/pih/warehouse/auth/`): HMAC-HS256 sign/validate. Claims: `{ sub: userId, loc: locationId, roles: [...], exp }`. Secret in env var `OPENBOXES_JWT_SECRET`. Token lifetime: 8 hours. No refresh tokens.
-- `AuthController.handleLogin` (line 117 success branch): after `session.user = userInstance`, mint a JWT and set the HttpOnly SameSite=Strict cookie `obx_token` on the response.
+- Mint JWT and set the HttpOnly SameSite=Strict cookie `obx_token` on the response at all three login plant points (same `JwtService` helper):
+  - `AuthController.handleLogin` success branch (line 117) — the GSP form-redirect login path.
+  - `ApiController.login` success branch (line 41) — the React LoginModal login path (`POST /api/login`).
+  - `ApiController.chooseLocation` (line 55) — re-issue JWT with updated `loc` claim when the React app changes location via `PUT /api/chooseLocation/{id}`.
 - `SecurityInterceptor.before()` (current line 35): at the top, check for `obx_token` cookie. If present and valid, call `authService.setCurrentUser(...)` and `authService.setCurrentLocation(...)` with values from the claims, return `true`. If absent or invalid, fall through to the existing session-based logic.
 - `AuthController.logout` (line 136): clear both `JSESSIONID` and `obx_token` cookies.
 - `chooseLocation` action: when location changes, re-issue the JWT with the updated `loc` claim and reset the cookie.
@@ -128,6 +131,7 @@ Each subsequent slice adds one location block at the top of the list (more speci
 - API calls from the React app succeed (cookie sent automatically; SecurityInterceptor validates JWT path).
 - A legacy GSP page (e.g., `/openboxes/admin/index`) still loads via the JSESSIONID path.
 - Playwright tests for login, React navigation, API auth, GSP regression all green.
+- Playwright test specifically logs in via the React LoginModal (POSTs `/api/login`) and confirms `obx_token` cookie is set on the response.
 - One commit tagged `phase-0-foundations` on `main`. No Grails domain code deleted. Rollback by reverting the commit.
 
 ### 7.6 Explicitly NOT in Phase 0
@@ -152,7 +156,7 @@ Every slice does these steps, in order:
 | 3 | **Port domain to JPA entities.** Rewrite Grails domain classes as Java JPA entities against the existing shared DB tables. Explicit `@Column`/`@Table` annotations match the existing schema so Hibernate 6's stricter naming doesn't conflict. Port GORM constraints to Bean Validation. |
 | 4 | **Port services.** Rewrite Grails services as Java Spring `@Service`s. Same business rules. Cross-context reads against not-yet-extracted services stay as direct JDBC against the shared DB (note these as TODOs that will be revisited when that context's service exists). |
 | 5 | **Port controllers.** Grails `*ApiController` → Spring `@RestController` annotated for springdoc-openapi. Generated OpenAPI spec is the slice's contract. |
-| 6 | **Move table ownership.** Take the slice's Liquibase changesets out of `grails-app/migrations/` and into `services/{context}-service/src/main/resources/db/changelog/`. New service runs them at startup. |
+| 6 | **Move table ownership.** Take the slice's Liquibase changesets out of `grails-app/migrations/` and into `services/{context}-service/src/main/resources/db/changelog/`. New service runs them at startup. **Additive-only constraint:** while external Grails callers of the slice's domain classes remain (Step 8b path), new migrations are restricted to additive changes only — new tables, new nullable columns with default values, new indexes. No column renames, no column removals, no type narrowings, no new NOT NULL or FK constraints on existing columns. The restriction lifts when Step 10 deletes the Grails domain class. |
 | 7 | **Wire JWT validation.** Service validates `obx_token` cookie via shared HMAC secret. Phase 1 creates the validator code; Phase 2+ reuses it as a small shared library if it's grown beyond ~50 lines. |
 | 8a | **Update React frontend.** Existing React code for this context calls the new URLs (`/api/{context}/...`). Any GSP-only screens for this context get React equivalents now. |
 | 8b | **Handle external Grails callers.** For each call site outside the slice that uses `Foo.get(id)` or reads `foo.columns`: either migrate it to HTTP against the new service (preferred when caller count is small, e.g., the 7 callers of Document), or leave the Grails domain class alive until the caller migrates in its own later slice. Document this decision in the slice's commit message. |
@@ -219,7 +223,7 @@ The following load-bearing assumptions were verified against the codebase before
 | A16 | Existing Geb suite targets GSP | ⚠️ Smaller than expected | Geb dependency present (`build.gradle:645`) but base `IntegrationSpec` extends `Specification` (Spock), not GebSpec; only one file matches GebSpec pattern. Playwright is purely additive |
 | A17 | Liquibase split feasible | ✅ | `LiquibaseUtil.groovy` tracks per-file via `DATABASECHANGELOG.filename` SUBSTRING; per-service changelogs coexist as long as filenames are namespaced |
 | A18 | All React API calls go through apiClient | ✅ except 2 | `src/js/api/services/ProductApi.js:15` raw axios — fixed in Phase 0.4; `SupportButton.jsx:21` calls 3rd-party HelpScout — stays as-is |
-| A19 | No external dependency on generated GSPs | ❌ Surfaced design change | 8+ controllers `render(view: "/common/react")`. Resolution: defer frontend decoupling to Phase 13 (by then most of these controllers will already have been deleted) |
+| A19 | No external dependency on generated GSPs | ❌ Surfaced design change | 8+ controllers `render(view: "/common/react")`. Resolution: defer frontend decoupling to Phase 9 (by then most of these controllers will already have been deleted) |
 | A20 | Jobs / BootStrap don't depend on session auth | ✅ | All 13 jobs declare `def sessionRequired = false`; BootStrap.groovy has zero session/request references |
 
 ## 11. Known issues / accepted as out of scope
@@ -228,7 +232,7 @@ The following load-bearing assumptions were verified against the codebase before
 - **Gradle 4.10.3 on Grails container.** Same logic — stays until Phase 13.
 - **Liquibase `LiquibaseUtil` versioning lives until Grails dies.** New services use their own changelogs and runners; LiquibaseUtil keeps owning the Grails `0.X.x/` folders. The version-folder scheme retires when Grails does.
 - **`SupportButton.jsx` calls HelpScout directly with raw axios.** Out of scope; third-party API; no auth required.
-- **Webpack continues to write GSPs through Phase 12.** Cosmetic only — the GSPs are generated automatically; no manual maintenance.
+- **Webpack continues to write GSPs through Phase 8.** Cosmetic only — the GSPs are generated automatically; no manual maintenance.
 - **No observability / metrics infrastructure called out.** Out of scope. Add when there's a real consumer; for a single-developer / no-live-users setup, Spring Boot Actuator on each service is enough.
 - **No multi-tenant / external OIDC consideration.** Out of scope; HMAC JWT is fit-for-purpose. Replace with OIDC if/when multi-tenancy is real.
 - **Slice phase ordering after Phase 2 is provisional.** Real ordering will be informed by Phase 1 and Phase 2 experience.
