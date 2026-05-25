@@ -242,11 +242,12 @@ class JwtService {
 
 - [ ] **Step 3: Wire JWT issuance into `AuthController.handleLogin` success branch.** In `grails-app/controllers/org/pih/warehouse/user/AuthController.groovy`:
   - Add `def jwtService` to the service-injection block (alongside `def userService`, `def authService`, etc., around line 22).
-  - At line 117, before the `redirect(controller: 'dashboard', action: 'index')` line, add:
+  - After the `if (userInstance?.warehouse && userInstance?.rememberLastLocation) { session.warehouse = ... }` block (around line 109) and BEFORE the `if (session?.targetUri)` check at line 112, add:
     ```groovy
     String token = jwtService.issue(session.user, session.warehouse)
     response.setHeader('Set-Cookie', JwtService.buildSetCookieHeader(token))
     ```
+    (Placement before the `targetUri` check ensures both redirect branches carry the cookie — inserting only before line 117 would skip the post-session-timeout re-login flow.)
 
 - [ ] **Step 4: Clear cookie in `AuthController.logout`.** Same file, at the start of the `def logout()` body at line 136:
 ```groovy
@@ -439,12 +440,14 @@ test('React-hosted route /openboxes/invoice/list is reachable after login', asyn
     data: {
       username: process.env.E2E_USER || 'admin',
       password: process.env.E2E_PASSWORD || 'password',
+      location: process.env.E2E_LOCATION_ID,
     },
     headers: { 'Content-Type': 'application/json' },
   });
   expect(loginRes.status()).toBe(200);
   const navRes = await request.get('/openboxes/invoice/list');
   expect(navRes.status()).toBe(200);
+  expect(navRes.url()).toContain('/invoice/list');  // catches silent redirect to chooseLocation when warehouse unset
 });
 ```
 
@@ -479,6 +482,7 @@ test('GSP /openboxes/admin/index loads after GSP-style login', async ({ request 
   });
   const response = await request.get('/openboxes/admin/index');
   expect(response.status()).toBe(200);
+  expect(response.url()).toContain('/admin/index');  // fails loudly if seed admin lacks rememberLastLocation and request was redirected to chooseLocation
 });
 ```
 
@@ -523,6 +527,7 @@ jobs:
           BASE_URL: http://localhost
           E2E_USER: admin
           E2E_PASSWORD: password
+          E2E_LOCATION_ID: '1'  # CI maintainer: override with a real seed warehouse UUID if '1' is not valid in the test fixture
         run: npm test
       - name: Tear down
         if: always()
@@ -532,9 +537,9 @@ jobs:
 - [ ] **Step 8: Local run.**
 ```bash
 cd e2e
-npm test
+E2E_LOCATION_ID=<your-seed-warehouse-id> npm test
 ```
-Expect 4 tests, all green. If the seed user differs from `admin`/`password`, set `E2E_USER` and `E2E_PASSWORD` env vars to match.
+Expect 4 tests, all green. If the seed user differs from `admin`/`password`, also set `E2E_USER` and `E2E_PASSWORD`. Find a valid warehouse ID via `docker exec openboxes-db mysql -u openboxes -popenboxes openboxes -e "SELECT id, name FROM location WHERE active=1 LIMIT 5"`.
 
 - [ ] **Step 9: Commit.**
 ```bash
