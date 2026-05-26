@@ -3,6 +3,10 @@
 
     <property name="now" value="now()"/>
     <changeSet author="mtoczek" id="0301202215240-0">
+        <!-- preCondition relocated during Phase 1 Task 6. Original Grails-side predicate
+             was `WHERE id = "66762f6c61e34cfd9297ecb0fcee2df2"` (PK-based). Switched to
+             document_code (functional identity). Both produce MARK_RAN on dev and production;
+             functional-identity dedup is more robust against ID-regeneration scenarios. -->
         <preConditions onFail="MARK_RAN">
             <sqlCheck expectedResult="0">
                 SELECT COUNT(*) FROM document_type WHERE document_code='INVOICE_TEMPLATE'

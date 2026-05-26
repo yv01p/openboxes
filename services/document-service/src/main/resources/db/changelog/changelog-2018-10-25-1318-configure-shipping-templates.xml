@@ -2,6 +2,12 @@
 <databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog/1.9" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog/1.9 http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-1.9.xsd">
 
     <changeSet author="jmiranda" id="1540492254253-1">
+        <!-- preCondition relocated during Phase 1 Task 6. Original Grails-side predicate
+             was `WHERE id = "ff80818166ac5f350166ac84c2150001"` (PK-based). The relocated
+             predicate uses document_code (functional identity of the template seed). Both
+             produce MARK_RAN on dev and production: dev install/changelog creates the row
+             with the same PK; production 0.8.x history has the row under both PK and code.
+             Functional-identity dedup is more robust against ID-regeneration scenarios. -->
         <preConditions onFail="MARK_RAN">
             <sqlCheck expectedResult="0">
                 SELECT COUNT(*) FROM document_type WHERE document_code='SHIPPING_TEMPLATE'

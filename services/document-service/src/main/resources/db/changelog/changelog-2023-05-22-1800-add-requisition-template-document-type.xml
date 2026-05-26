@@ -3,6 +3,11 @@
 
     <property name="now" value="now()"/>
     <changeSet author="awalkowiak" id="2205202318000-0">
+        <!-- preCondition relocated during Phase 1 Task 6. Original Grails-side predicate
+             was `WHERE id = "REQUISITION_TEMPLATE"` (PK-based; the PK and code happened to
+             coincide for this row). Switched to document_code (functional identity) for
+             consistency with the other two relocated INSERT changesets. Both produce
+             MARK_RAN on dev and production. -->
         <preConditions onFail="MARK_RAN">
             <sqlCheck expectedResult="0">
                 SELECT COUNT(*) FROM document_type WHERE document_code='REQUISITION_TEMPLATE'

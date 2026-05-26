@@ -8,6 +8,12 @@
                                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.5.xsd">
 
   <changeSet author="pmuchowski" id="3001202115300-1">
+    <!-- preCondition strengthened during Phase 1 Task 6 relocation. Original Grails-side
+         predicate was <columnExists tableName="document" columnName="file_uri"/> with
+         onFail=MARK_RAN — which would MARK_RAN if the column was missing, but RUN the
+         body (re-widening) every time the column was present (which is always). The
+         relocated predicate uses a type-aware sqlCheck so MARK_RAN fires when the column
+         is ALREADY longtext (which it is in dev and production), avoiding redundant DDL. -->
     <preConditions onFail="MARK_RAN">
       <not>
         <sqlCheck expectedResult="longtext">
