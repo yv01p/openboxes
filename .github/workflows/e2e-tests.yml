@@ -5,6 +5,7 @@ on:
     paths:
       - 'grails-app/**'
       - 'src/js/**'
+      - 'services/**'
       - 'docker/**'
       - 'e2e/**'
       - '.github/workflows/e2e-tests.yml'
