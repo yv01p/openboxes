@@ -363,7 +363,7 @@ Additional new React surface:
 
 ### 10.1 Verification (with auto-migrate)
 
-identity-service `PasswordEncoder` is a `DelegatingPasswordEncoder` with two recognized formats. On every `verify(rawPassword, storedHash)` call:
+identity-service ships a custom `PasswordEncoder` implementation (`org.springframework.security.crypto.password.PasswordEncoder` interface) that recognizes two unprefixed stored-hash formats. Spring Security's built-in `DelegatingPasswordEncoder` is not used because the legacy SHA-1+Base64 hashes carry no `{id}` prefix and `DelegatingPasswordEncoder` only supports one default fallback encoder. On every `verify(rawPassword, storedHash)` call:
 
 ```
 1. If storedHash starts with "$2a$" / "$2b$" / "$2y$" (BCrypt format):
