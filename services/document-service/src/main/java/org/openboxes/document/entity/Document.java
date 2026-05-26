@@ -60,7 +60,11 @@ public class Document {
     @Column(name = "file_contents", columnDefinition = "mediumblob")
     private byte[] fileContents;
 
-    @Column(name = "date_created", nullable = false)
+    // dateCreated is set explicitly in DocumentService.create() rather than via
+    // @CreationTimestamp to avoid double-stamping during Grails coexistence
+    // (Grails-side GORM also auto-stamps via the dateCreated convention).
+    // updatable=false defends against accidental UPDATEs wiping the creation timestamp.
+    @Column(name = "date_created", nullable = false, updatable = false)
     private Instant dateCreated;
 
     @Column(name = "last_updated", nullable = false)

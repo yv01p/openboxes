@@ -46,7 +46,11 @@ public class DocumentType {
     @Column(name = "sort_order")
     private Integer sortOrder;
 
-    @Column(name = "date_created", nullable = false)
+    // dateCreated is set explicitly by writers rather than via @CreationTimestamp
+    // to avoid double-stamping during Grails coexistence (Grails-side GORM also
+    // auto-stamps via the dateCreated convention). updatable=false defends against
+    // accidental UPDATEs wiping the creation timestamp.
+    @Column(name = "date_created", nullable = false, updatable = false)
     private Instant dateCreated;
 
     @Column(name = "last_updated", nullable = false)
