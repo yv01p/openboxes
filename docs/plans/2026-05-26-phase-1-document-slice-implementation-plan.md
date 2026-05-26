@@ -169,7 +169,6 @@ Items surfaced during code reviews that were intentionally deferred rather than 
 | T3-M4 | Minor | Any time | Remove explicit `hibernate.dialect: org.hibernate.dialect.MariaDBDialect` — Hibernate 6 auto-detects from JDBC URL; logs `HHH90000025` deprecation warning on every boot | `services/document-service/src/main/resources/application.yml:15` |
 | T3-M5 | Minor | Any time | `@Size(max = 255)` on entity fields only triggers on Bean Validation via `@Valid` DTO binding; either remove (DB enforces via varchar(255)) or document intent | `entity/Document.java`, `entity/DocumentType.java` |
 | T2-M6 | Minor | Phase 2+ | Reconcile `services/` module `0.1.0-SNAPSHOT` versioning vs Grails release cadence once a second service ships | `services/build.gradle:8` |
-| T4-I1 | Important | Pre-Task 11 (before E2E exercises write-then-Grails-read) | Hibernate L2 cache coexistence: Grails `Document.groovy:39` declares `cache true` but document-service doesn't participate. After a document-service write/delete, Grails L2 cache may serve stale data until eviction. Remediation: flip `cache true` → `cache false` on `Document.groovy` only (DocumentType.groovy does NOT have `cache true`, do not edit) until Task 10 deletes the Grails domain class | `grails-app/domain/org/pih/warehouse/core/Document.groovy:39` |
 | T4-M2 | Minor | Any time | `findFirstByName` returns DB-natural row when name has duplicates (no unique constraint on `name`); consider `findFirstByNameOrderByDateCreatedAsc` for deterministic "oldest" semantics matching clustered-PK iteration. Current data has one template per name; low risk | `repository/DocumentRepository.java:27` |
 | T4-M4 | Minor | Bundle with T3-I3 | `Instant.now()` correctness depends on `serverTimezone=UTC` in JDBC URL (`application.yml:8`); add comment or pair with T3-I3 container TZ pin for full coupling guarantee | `service/DocumentService.java:94` |
 | T4-M5 | Minor | Any time | `nullsLast(naturalOrder())` defensive on `@NotNull` field can never trigger; add `// defensive` comment or remove for clarity | `service/DocumentService.java:72` |
@@ -1276,7 +1275,13 @@ git add docker/nginx/conf.d/app.conf
 git commit -m "phase 1: route /api/documents/ to document-service via nginx"
 ```
 
-### Task 10: Delete Grails Document counterparts (§8 Step 10)
+### Task 10: Delete Grails Document counterparts (§8 Step 10) — **DEFERRED to Phase X**
+
+> **Status:** Deferred from Phase 1. Pre-dispatch recon (post-Task-9) surfaced 6 architectural questions the spec does not pin down, plus a much larger consumer surface than the spec enumerates (4 domains own `hasMany Document` not 3 — adding **Order** and **Shipment**, both with `all-delete-orphan` cascade; 7 `Document.load(id)` bridge sites added by Task 8b; 15+ GSPs read `parent.documents`; `DocumentService.getAllDocumentsBySupplierOrganization()` joins through `Document`; `DocumentController.groovy` provides live template-rendering surface — Zebra, Invoice, Requisition — that document-service does not yet replicate; top-nav "Documents" menu in `conf/runtime.groovy:453` points at the to-be-deleted controller). The plan's "Conditional — only if Task 8b migration is clean" guardrail applies: 8b's `Document.load(id)` bridges are deliberate technical debt, not a clean migration.
+>
+> See **Phase X: Document slice decoupling** below for the deferred scope, the 6 architectural questions, and the work units that flow into that phase. The original spec below is preserved as starting material for whoever picks up Phase X.
+>
+> ---
 
 **Files:**
 - Delete: `grails-app/domain/org/pih/warehouse/core/Document.groovy`, `DocumentType.groovy`, `DocumentCode.groovy` (if separate)
@@ -1453,12 +1458,47 @@ Add a short addendum section to `docs/retrospectives/2026-05-26-phase-0-foundati
 (Inherited verbatim from spec §7.6, which lists Phase 0 exclusions, and from the per-slice template's Step 10 conditional ("delete only artifacts no remaining Grails code references"). Phase 1 specifically does NOT:)
 
 - **Delete `DocumentService.groovy`.** It contains ~20+ file/Excel/PDF utility methods unrelated to Document entity. Stays in Grails until those callers migrate in their own slices (most by Phase 8–11; some may live until Phase 12 cleanup).
+- **Delete Grails-side Document.groovy / DocumentType.groovy / DocumentController.groovy / views/document/.** Originally planned as Task 10; **deferred to Phase X** (see below) because the actual consumer surface is much larger than the spec enumerates and 6 architectural questions are unresolved.
 - **Migrate billing-owned join tables.** `invoice_document` join-table changesets stay in `grails-app/migrations/`; billing-service owns them at Phase 10 per spec §4.3.
 - **Add OpenAPI client generation for React.** No React Document API code exists; springdoc-openapi serves machine-readable docs but no auto-generated client is added in Phase 1.
 - **Add saga / outbox / event subscriber infrastructure.** Deferred to Phase 7 per spec §4.5; Document writes from Grails use sync HTTP with cookie forwarding instead (acceptable because Document write traffic is admin-scale).
 - **Add Sentry / metrics / dashboards.** Spring Boot Actuator alone per spec §11 known issues.
 - **Migrate the 3 GSPs to React.** Out of Phase 1 scope; the partials retain GSP form, just with controller-fetched models.
 - **Update upstream-published `ghcr.io/openboxes/openboxes:latest` image.** No external consumers; local `docker-compose up --build` covers the development workflow.
+
+## Phase 1 hybrid state (intentional)
+
+Phase 1's goal — per spec §8 — was to extract a working HTTP-routed Document slice. That has landed (Tasks 1–9 + I1/I2 + T4-I1). It deliberately stops short of fully decoupling Grails from the `document` table. The codebase ends Phase 1 in a **hybrid state**:
+
+- **document-service is authoritative for Document CRUD.** All write paths (upload, delete) flow through `DocumentClient` → nginx `/api/documents` → Spring Boot. Java-side JWT validation owns the security envelope.
+- **Grails-side `Document.groovy` still exists** as a leaf domain class. It is queried only via two patterns: (a) `Document.load(id)` bridges in 7 sites that feed Grails-managed join-table mutators (`parent.addToDocuments` / `removeFromDocuments`), and (b) GSP-side iteration of `parent.documents` collections backed by GORM. No `Document.get` / `Document.findBy*` / `new Document(...)` patterns remain — those were migrated in Task 8b.
+- **`*_document` join tables remain Grails-owned** (`invoice_document`, `order_document`, `product_document`, `shipment_document`, `shipment_workflow_document`). All are empty in dev DB; production carries pre-existing rows.
+- **Grails Hibernate L2 cache is OFF** on `Document.groovy` (T4-I1 closed) so write-from-document-service then read-from-Grails returns fresh rows.
+- **`DocumentController.groovy` (Grails)** still serves template-rendering URLs (`renderInvoiceTemplate`, `renderZebraTemplate`, `buildZebraTemplate`, `printZebraTemplate`, `exportZebraTemplate`, `download`, `preview`) referenced by 28+ GSPs. These do real work (Word/Excel/Zebra output) not yet ported to document-service.
+
+This is the conventional strangler-fig stopping point: the new service owns the slice; the old code is reduced to a thin bridging surface that can be deleted as a future, independent unit of work.
+
+## Phase X: Document slice decoupling (deferred from Phase 1)
+
+**Trigger to dispatch:** This phase should run once the following are answered (likely as part of a focused brainstorming + design-spec cycle):
+
+1. **Join-table ownership.** Keep `invoice_document` / `order_document` / `product_document` / `shipment_document` / `shipment_workflow_document` Grails-side with non-GORM accessors, OR migrate them into document-service's schema with new `?parentType=&parentId=` query API, OR drop them and reverse the link direction (FK from the document side).
+2. **`findByParent` API surface.** If parent-link queries move to document-service, what does `DocumentController.java` expose? `?invoiceId=`, `?orderId=`, `?productId=`, `?shipmentId=`, `?shipmentWorkflowId=` all need to be designed and tested.
+3. **Template-rendering surface.** `DocumentController.groovy` actions `renderInvoiceTemplate`, `renderZebraTemplate`, `buildZebraTemplate`, `printZebraTemplate`, `exportZebraTemplate`, `renderRequisitionTemplate` do server-side Word/Excel/Zebra output. Port to document-service first, OR retain as a `DocumentTemplateController` (renamed, CRUD-stripped), OR split per template type.
+4. **`getAllDocumentsBySupplierOrganization()`** in `DocumentService.groovy:1606` is an Order-rooted Criteria query that joins through `Document`. Either ports to a new document-service endpoint (`?supplierOrgId=`), or stays Grails-side IFF the Document domain class survives this phase (it won't, by definition).
+5. **Top-nav "Documents" menu** (`conf/runtime.groovy:453` → `/document/list`). Stub Grails page, redirect to a future React page, or remove from menu config.
+6. **DocumentType domain ownership.** `DocumentType.groovy` is currently a Grails domain used by GSPs comparing `documentInstance?.documentType?.documentCode`. Migrate to document-service (and add a `findByCode` style API), keep Grails-side (and accept the duplication with the Java entity), or split (Java owns persistence, Grails has a read-only enum/lookup).
+
+**Work units that flow into Phase X:**
+
+- The 7 `Document.load(id)` bridge sites (ProductController:467,505,538; InvoiceController:168; ShipmentController:930; OrderController:561; DocumentUploadController:31; StockMovementService:3465) — all carry `// TODO` markers naming Phase 2+ as the dissolution point.
+- The 15+ GSPs that read `parent.documents` directly (enumerated in pre-dispatch recon for Task 10).
+- `Invoice.getOrderDocuments()` cross-domain Document iteration.
+- `Product.getImages()` filtering on `documents`.
+- All deferred follow-ups whose Target column points at "Phase 2" or later — re-classify under Phase X if they touch the Document slice.
+- The original Task 10 spec at this plan's lines `1279-1334` is preserved as starting material; do NOT take it at face value (it under-counts the consumer surface).
+
+**Owner:** TBD. Likely paired with the parent-entity slice extractions (Phase 8–11 Order/Shipment/Invoice/Product slices), or a dedicated mini-phase.
 
 ## Known issues inherited from spec
 
