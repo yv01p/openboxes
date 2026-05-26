@@ -125,7 +125,7 @@ Newly introduced by this plan (paths, signatures, commands, ordering, consumer i
 | P39 | impact | Three GSPs call `Document.findAllByDocumentCode(...)` directly: `views/inventoryItem/_actionsCurrentStock.gsp:45`, `views/order/_summary.gsp:242`, `views/order/_orderDocuments.gsp:2`. Each is a `_*.gsp` partial included via `<g:render template="..."/>` from a wrapping GSP. Task 8b traces each include chain back to the wrapping controller action, moves the lookup there, and passes the result via model into the partial | `grep -rn` enumerated the 3 GSP sites; manual trace required per partial |
 | P40 | impact | No domain class declares `hasMany Document` or `belongsTo Document` — deleting Document.groovy creates NO schema-cascade issues in the Grails domain layer | `grep -rnE "hasMany.*Document\b\|belongsTo.*Document\b"` returned empty |
 | P41 | impact | Three domain classes (`Invoice.groovy`, `ShipmentWorkflow.groovy`, `Product.groovy`) `import org.pih.warehouse.core.Document` for type references (method parameters, join-table sides). After Task 10 deletes Document.groovy these imports must go too — replacing with HTTP-fetched `Map<String,Object>` or `String documentId` typed parameters | `grep -rn "import org.pih.warehouse.core.Document" grails-app/domain/` returned 3 files |
-| P42 | impact | nginx `location /api/documents/` MUST be inserted BEFORE existing `location /api/` block. Current `app.conf` ordering: `/api/`, `/openboxes/`, `/`. New ordering after Task 9: `/api/documents/`, `/api/`, `/openboxes/`, `/` | `cat docker/nginx/conf.d/app.conf` confirmed current 3-block ordering |
+| P42 | impact | nginx `location /api/documents` (no trailing slash; covers both bare `POST /api/documents` and `/api/documents/{id}` suffix paths) MUST be inserted BEFORE existing `location /api/` block. Current `app.conf` ordering: `/api/`, `/openboxes/`, `/`. New ordering after Task 9: `/api/documents`, `/api/`, `/openboxes/`, `/` | `cat docker/nginx/conf.d/app.conf` confirmed current 3-block ordering |
 | P43 | impact | The Phase 0 `:latest` image-retag workaround becomes obsolete once compose has the `build:` directive. Plan Task 2 updates compose; Phase 0 plan Task 5 Step 1 remains accurate as a fallback if user reverts the `build:` change but is otherwise superseded | self-evident |
 | P44 | impact | `docker-compose up` semantics change after Task 2: it now rebuilds the local image instead of pulling `:latest`. CI workflow (`.github/workflows/e2e-tests.yml`) also benefits — the explicit `docker build` step becomes redundant under `docker-compose up --build` | docker-compose v1 docs |
 | P45 | impact | seed `document` table is EMPTY (0 rows); `document_type` has 10 rows but only 3 distinct non-NULL `document_code` values (`INVOICE_TEMPLATE` confirmed; others surface in Task 1 audit). E2E tests must seed via the upload endpoint or via direct DB insert before download/list assertions | `mysql -e "SELECT COUNT(*) FROM document"` returned 0 |
@@ -1190,15 +1190,15 @@ git commit -m "phase 1: migrate ~20 Grails callers to document-service via Docum
 **Files:**
 - Modify: `docker/nginx/conf.d/app.conf`
 
-- [ ] **Step 1: Insert `/api/documents/` block BEFORE existing `/api/` block.**
+- [ ] **Step 1: Insert `/api/documents` block BEFORE existing `/api/` block.**
 ```nginx
 server {
     listen 80;
     access_log /var/log/nginx/reverse-access.log;
     error_log /var/log/nginx/reverse-error.log;
 
-    location /api/documents/ {
-        proxy_pass http://document-service:8081/api/documents/;
+    location /api/documents {
+        proxy_pass http://document-service:8081;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header Cookie $http_cookie;
@@ -1211,14 +1211,17 @@ server {
     # ... rest unchanged ...
 }
 ```
-Ordering is critical per P42: more-specific path must come first in nginx so `/api/documents/foo` matches `/api/documents/` before `/api/`.
+Ordering is critical per P42: more-specific path must come first in nginx so `/api/documents/foo` and bare `/api/documents` (the multipart upload POST) both match `/api/documents` before `/api/`. The `location` directive intentionally omits the trailing slash and the `proxy_pass` URL intentionally has no path suffix — this makes nginx pass the original request URI verbatim, covering both `POST /api/documents` (collection root) and `GET /api/documents/{id}` (suffix paths). Spring Boot 3.x defaults `useTrailingSlashMatch=false`, so the controller at `@RequestMapping("/api/documents")` only handles the no-slash form; the no-slash nginx prefix matches both forms but only forwards what callers actually send.
 
 - [ ] **Step 2: Reload nginx (no restart needed since config is volume-mounted).**
 ```bash
 sudo docker exec openboxes-nginx nginx -s reload
-# Probe
-curl -s -o /dev/null -w "HTTP %{http_code}\n" http://localhost/api/documents/types/non-template
-# Expect 401 (auth required) — confirms nginx routes to document-service
+# Probe path-suffix endpoint
+curl -s -o /dev/null -w "GET /api/documents/types/non-template HTTP %{http_code}\n" http://localhost/api/documents/types/non-template
+# Probe bare collection root (catches the trailing-slash routing regression specifically)
+curl -s -o /dev/null -w "POST /api/documents (multipart) HTTP %{http_code}\n" \
+  -X POST -F "file=@/etc/hostname" -F "name=smoke-probe" http://localhost/api/documents
+# Expect 401 on both (auth required) — confirms nginx routes both forms to document-service
 ```
 
 - [ ] **Step 3: Commit.**
