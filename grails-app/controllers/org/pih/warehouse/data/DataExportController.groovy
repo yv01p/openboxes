@@ -10,23 +10,23 @@
 package org.pih.warehouse.data
 
 import grails.converters.JSON
-import org.pih.warehouse.core.Document
-import org.pih.warehouse.core.DocumentCode
-import org.pih.warehouse.core.DocumentType
 
 import java.nio.charset.Charset
 
 class DataExportController {
 
     def dataService
+    def documentClient
+
     def index() {
-        List<Document> documents = Document.findAllByDocumentCode(DocumentCode.DATA_EXPORT)
+        List<Map> documents = documentClient.findByCode('DATA_EXPORT')
         [documents: documents]
     }
 
     def render() {
-        Document document = Document.get(params.id)
-        String query = new String(document.fileContents, Charset.defaultCharset());
+        Map document = documentClient.fetchById(params.id)
+        byte[] fileContents = documentClient.fetchContent(params.id)
+        String query = new String(fileContents, Charset.defaultCharset());
         if (query) {
             def data = dataService.executeQuery(query)
             if (params.format == "csv") {

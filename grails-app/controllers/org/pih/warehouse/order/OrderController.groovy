@@ -20,7 +20,6 @@ import org.pih.warehouse.core.BudgetCode
 import org.pih.warehouse.core.Constants
 import org.pih.warehouse.core.DocumentService
 import org.pih.warehouse.core.DocumentTemplateService
-import org.pih.warehouse.core.DocumentType
 import org.pih.warehouse.core.Organization
 import org.pih.warehouse.core.ValidationCode
 import org.pih.warehouse.data.ProductSupplierService
@@ -43,6 +42,7 @@ class OrderController {
     ProductSupplierService productSupplierService
     DocumentTemplateService documentTemplateService
     DocumentService documentService
+    def documentClient
 
     static allowedMethods = [save: "POST", update: "POST"]
 
@@ -240,8 +240,17 @@ class OrderController {
             flash.message = "${warehouse.message(code: 'default.not.found.message', args: [warehouse.message(code: 'order.label', default: 'Order'), params.id])}"
             redirect(action: "list")
         } else {
-            [orderInstance: orderInstance]
+            [orderInstance: orderInstance, documentTemplates: purchaseOrderTemplates()]
         }
+    }
+
+    /**
+     * Shared helper for the 4 OrderController actions whose views include _summary.gsp /
+     * _orderDocuments.gsp — both GSPs previously fetched PURCHASE_ORDER_TEMPLATE docs inline
+     * inline (Task 8b removed those, requiring the wrapping action to pre-fetch).
+     */
+    private List<Map> purchaseOrderTemplates() {
+        return documentClient.findByCode('PURCHASE_ORDER_TEMPLATE') ?: []
     }
 
     def edit() {
@@ -354,7 +363,7 @@ class OrderController {
                 flash.message = "${warehouse.message(code: 'default.not.found.message', args: [warehouse.message(code: 'comment.label', default: 'Comment'), commentInstance.id])}"
                 redirect(action: "show", id: orderInstance?.id)
             }
-            render(view: "editAdjustment", model: [orderInstance: orderInstance, orderAdjustment: orderAdjustment, isAccountingRequired: isAccountingRequired])
+            render(view: "editAdjustment", model: [orderInstance: orderInstance, orderAdjustment: orderAdjustment, isAccountingRequired: isAccountingRequired, documentTemplates: purchaseOrderTemplates()])
         }
     }
 
@@ -429,7 +438,7 @@ class OrderController {
             flash.message = "${warehouse.message(code: 'default.not.found.message', args: [warehouse.message(code: 'order.label', default: 'Order'), params.id])}"
             redirect(action: "list")
         } else {
-            return [orderInstance: orderInstance, commentInstance: new Comment()]
+            return [orderInstance: orderInstance, commentInstance: new Comment(), documentTemplates: purchaseOrderTemplates()]
         }
     }
 
@@ -505,27 +514,27 @@ class OrderController {
 
     def addDocument() {
         Order orderInstance = Order.get(params.id)
-        List<DocumentType> documentTypes = documentService.getNonTemplateDocumentTypes()
+        List<Map> documentTypes = documentService.getNonTemplateDocumentTypes()
 
         if (!orderInstance) {
             flash.message = "${warehouse.message(code: 'default.not.found.message', args: [warehouse.message(code: 'order.label', default: 'Order'), params.id])}"
             redirect(action: "list")
         } else {
-            return [orderInstance: orderInstance, documentTypes: documentTypes]
+            return [orderInstance: orderInstance, documentTypes: documentTypes, documentTemplates: purchaseOrderTemplates()]
         }
     }
 
     def editDocument() {
         Order orderInstance = Order.get(params?.order?.id)
-        List<DocumentType> documentTypes = documentService.getNonTemplateDocumentTypes()
+        List<Map> documentTypes = documentService.getNonTemplateDocumentTypes()
 
         if (!orderInstance) {
             flash.message = "${warehouse.message(code: 'default.not.found.message', args: [warehouse.message(code: 'order.label', default: 'Order'), params.id])}"
             redirect(action: "list")
         } else {
-            Document documentInstance = Document.get(params?.id)
+            Map documentInstance = documentClient.fetchById(params?.id)
             if (!documentInstance) {
-                flash.message = "${warehouse.message(code: 'default.not.found.message', args: [warehouse.message(code: 'document.label', default: 'Document'), documentInstance.id])}"
+                flash.message = "${warehouse.message(code: 'default.not.found.message', args: [warehouse.message(code: 'document.label', default: 'Document'), params?.id])}"
                 redirect(action: "show", id: orderInstance?.id)
             }
             render(view: "addDocument", model: [
@@ -543,12 +552,13 @@ class OrderController {
             flash.message = "${warehouse.message(code: 'default.not.found.message', args: [warehouse.message(code: 'order.label', default: 'Order'), params.order.id])}"
             redirect(action: "list")
         } else {
-            def documentInstance = Document.get(params?.id)
+            Map documentInstance = documentClient.fetchById(params?.id)
             if (!documentInstance) {
                 flash.message = "${warehouse.message(code: 'default.not.found.message', args: [warehouse.message(code: 'comment.label', default: 'Comment'), params.id])}"
                 redirect(action: "show", id: orderInstance?.id)
             } else {
-                orderInstance.removeFromDocuments(documentInstance)
+                // Join row still managed by Grails this slice; detach by proxy id.
+                orderInstance.removeFromDocuments(Document.load(documentInstance.id))
                 if (!orderInstance.hasErrors() && orderInstance.save(flush: true)) {
                     flash.message = "${warehouse.message(code: 'default.updated.message', args: [warehouse.message(code: 'order.label', default: 'Order'), orderInstance.id])}"
                     redirect(action: "show", id: orderInstance.id)
@@ -940,8 +950,11 @@ class OrderController {
             flash.message = "${warehouse.message(code: 'default.not.found.message', args: [warehouse.message(code: 'order.label', default: 'Order'), params.id])}"
             redirect(action: "list")
         } else {
-            Document documentTemplate = Document.findByName("${controllerName}:${actionName}")
+            Map documentTemplate = documentClient.findByName("${controllerName}:${actionName}")
             if (documentTemplate) {
+                // renderGroovyServerPageDocumentTemplate reads .fileContents; document-service strips
+                // it from /api/documents/{id}, so fetch bytes separately and inject.
+                documentTemplate = documentTemplate + [fileContents: documentClient.fetchContent(documentTemplate.id)]
                 render documentTemplateService.renderGroovyServerPageDocumentTemplate(documentTemplate, [orderInstance:orderInstance])
                 return
             }
@@ -958,8 +971,10 @@ class OrderController {
             if (!params?.documentTemplate?.id) {
                 throw new IllegalArgumentException("documentTemplate.id is required")
             }
-            Document documentTemplate = Document.get(params?.documentTemplate?.id)
+            Map documentTemplate = documentClient.fetchById(params?.documentTemplate?.id)
             if (documentTemplate) {
+                // Same as print(): inject bytes so renderOrderDocumentTemplate can read .fileContents.
+                documentTemplate = documentTemplate + [fileContents: documentClient.fetchContent(documentTemplate.id)]
 
                 try {
                     ByteArrayOutputStream outputStream = new ByteArrayOutputStream()
@@ -1156,9 +1171,11 @@ class OrderController {
         render(template: "orderInvoices", model: [orderInstance: order])
     }
 
+    // documentTemplates pre-fetched here because _orderDocuments.gsp previously called
+    // Document.findAllByDocumentCode(...) inline (Task 8b: GSP-side GORM removed).
     def orderDocuments() {
         Order order = Order.get(params.id)
-        render(template: "orderDocuments", model: [orderInstance: order])
+        render(template: "orderDocuments", model: [orderInstance: order, documentTemplates: purchaseOrderTemplates()])
     }
 
     def orderComments() {

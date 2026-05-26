@@ -19,4 +19,6 @@ beans = {
         order = Ordered.HIGHEST_PRECEDENCE + 1
     }
     productValidator(ProductValidator)
+
+    documentClient(org.pih.warehouse.core.DocumentClient)
 }

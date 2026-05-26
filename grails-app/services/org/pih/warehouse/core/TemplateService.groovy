@@ -16,7 +16,15 @@ class TemplateService {
 
     GroovyPagesTemplateEngine groovyPagesTemplateEngine
 
-    String renderTemplate(Document document, Map model) {
+    /**
+     * Renders a template document. Accepts either:
+     *   - a Map with keys `fileContents` (byte[]) and `name` (String), or
+     *   - a domain Document (legacy in-process callers; Groovy property access works the same).
+     *
+     * Map-based callers fetch content via DocumentClient.fetchContent(id) and pre-populate the
+     * Map before invoking this method.
+     */
+    String renderTemplate(def document, Map model) {
         String templateContent = new String(document.fileContents)
         renderTemplate(templateContent, document.name, model)
     }

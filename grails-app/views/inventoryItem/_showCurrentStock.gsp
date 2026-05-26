@@ -39,7 +39,7 @@
                 <tr class="prop ${styleClass}" title="${entry?.inventoryItem?.lotStatus == LotStatusCode.RECALLED ? warehouse.message(code: 'inventoryItem.recalledLot.label') : (entry?.onHold ?  warehouse.message(code: 'inventoryItem.restrictedBin.label') : '')}">
                     <td class="middle" style="text-align: left; width: 10%" nowrap="nowrap">
                         <g:render template="actionsCurrentStock"
-                                  model="[commandInstance:commandInstance,binLocation:entry.binLocation,itemInstance:entry.inventoryItem,itemQuantity:entry.quantityOnHand,isSuperuser:isSuperuser]" />
+                                  model="[commandInstance:commandInstance,binLocation:entry.binLocation,itemInstance:entry.inventoryItem,itemQuantity:entry.quantityOnHand,isSuperuser:isSuperuser,zebraTemplates:zebraTemplates]" />
                     </td>
                     <td>
                         <div class="line">

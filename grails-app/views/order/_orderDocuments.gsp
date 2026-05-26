@@ -1,5 +1,5 @@
 <div>
-    <g:set var="documentTemplates" value="${org.pih.warehouse.core.Document.findAllByDocumentCode(org.pih.warehouse.core.DocumentCode.PURCHASE_ORDER_TEMPLATE)}"/>
+    <%-- documentTemplates pre-fetched by the wrapping OrderController.orderDocuments action (Task 8b). --%>
     <g:if test="${orderInstance?.documents?.findAll { !it.fileUri } || documentTemplates }">
         <div class="box">
             <h2><warehouse:message code="documents.label"/></h2>

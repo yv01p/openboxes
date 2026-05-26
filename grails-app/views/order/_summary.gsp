@@ -239,7 +239,7 @@
                                             </div>
                                         </g:if>
                                     </g:each>
-                                    <g:each var="documentTemplate" in="${org.pih.warehouse.core.Document.findAllByDocumentCode(org.pih.warehouse.core.DocumentCode.PURCHASE_ORDER_TEMPLATE)}">
+                                    <g:each var="documentTemplate" in="${documentTemplates ?: []}">
                                         <div class="action-menu-item">
                                             <g:link controller="order" action="render" id="${orderInstance?.id}" target="_blank"
                                                 params="['documentTemplate.id': documentTemplate.id]"

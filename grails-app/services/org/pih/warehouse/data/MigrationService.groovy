@@ -19,8 +19,6 @@ import org.hibernate.sql.JoinType
 import org.pih.warehouse.api.AvailableItem
 import org.pih.warehouse.auth.AuthService
 import org.pih.warehouse.core.Constants
-import org.pih.warehouse.core.Document
-import org.pih.warehouse.core.DocumentType
 import org.pih.warehouse.core.Location
 import org.pih.warehouse.core.LocationType
 import org.pih.warehouse.core.LocationTypeCode
@@ -56,6 +54,7 @@ class MigrationService {
 
     def configService
     def dataService
+    def documentClient
     def gparsService
     def inventoryService
     ProductAvailabilityService productAvailabilityService
@@ -1187,17 +1186,19 @@ class MigrationService {
         List<Map> data = dataService.transformObjects(results.values().flatten(), props)
         String csvData = dataService.generateCsv(data)
 
-        // Store the data in a Document
-        DocumentType defaultDocumentType = DocumentType.get(Constants.DEFAULT_DOCUMENT_TYPE_ID)
-        Document migrationReport = new Document()
-        migrationReport.documentType = defaultDocumentType
-        migrationReport.name = "Product Inventory Migration Report for ${location.name}"
-        migrationReport.filename = "Product Inventory Migration Report for ${location.name} ${Constants.DISPLAY_DATE_FORMATTER.format(new Date())}.csv"
-        migrationReport.extension = "csv"
-        migrationReport.fileContents = csvData
-        if (!migrationReport.validate() || !migrationReport.save() ) {
+        // Store the data via document-service.
+        try {
+            String name = "Product Inventory Migration Report for ${location.name}"
+            String filename = "Product Inventory Migration Report for ${location.name} ${Constants.DISPLAY_DATE_FORMATTER.format(new Date())}.csv"
+            documentClient.create(
+                    name,
+                    filename,
+                    'text/csv',
+                    csvData.getBytes('UTF-8'),
+                    Constants.DEFAULT_DOCUMENT_TYPE_ID)
+        } catch (Exception e) {
             // if for some reason we could not save the migration report, then log the results and don't fail over it
-            log.info("Could not save migration report for location ${location.name}: ${results}")
+            log.info("Could not save migration report for location ${location.name}: ${results}", e)
         }
     }
 }

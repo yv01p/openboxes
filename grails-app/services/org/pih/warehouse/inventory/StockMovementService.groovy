@@ -90,6 +90,7 @@ import org.springframework.web.multipart.MultipartFile
 class StockMovementService {
 
     AuthService authService
+    def documentClient
     ProductService productService
     RequisitionIdentifierService requisitionIdentifierService
     ShipmentIdentifierService shipmentIdentifierService
@@ -3298,8 +3299,8 @@ class StockMovementService {
                     ]
             ])
 
-            List<Document> requisitionTemplates = Document.findAllByDocumentCode(DocumentCode.REQUISITION_TEMPLATE)
-            requisitionTemplates?.each { Document documentTemplate ->
+            List<Map> requisitionTemplates = documentClient.findByCode('REQUISITION_TEMPLATE')
+            requisitionTemplates?.each { Map documentTemplate ->
                 documentList << [
                     name        : documentTemplate?.name,
                     documentType: documentTemplate?.documentType?.name,
@@ -3451,14 +3452,17 @@ class StockMovementService {
 
     void addDocument(MultipartFile fileContents, StockMovement stockMovement) {
         Shipment shipment = stockMovement.shipment
-        Document document = new Document()
-        document.fileContents = fileContents.bytes
-        document.contentType = fileContents.contentType
-        document.name = fileContents.originalFilename
-        document.filename = fileContents.originalFilename
-        document.documentType = DocumentType.get(Constants.DEFAULT_DOCUMENT_TYPE_ID)
-
-        shipment.addToDocuments(document)
+        // Document creation is owned by document-service via documentClient.create().
+        // The shipment_document join (still managed by Grails this slice) is re-established
+        // via Document.load(id) which returns a proxy resolving against the same row.
+        // TODO: when Shipment migrates, document-service should own this join too (Phase 2+).
+        Map created = documentClient.create(
+                fileContents.originalFilename,
+                fileContents.originalFilename,
+                fileContents.contentType,
+                fileContents.bytes,
+                Constants.DEFAULT_DOCUMENT_TYPE_ID)
+        shipment.addToDocuments(Document.load(created.id))
     }
 
     void saveDocument(MultipartFile fileContent, StockMovement stockMovement) {

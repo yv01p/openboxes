@@ -39,7 +39,7 @@ class DocumentTemplateService {
     def forecastingService
     def requisitionService
 
-    def renderGroovyServerPageDocumentTemplate(Document documentTemplate, Map model) {
+    def renderGroovyServerPageDocumentTemplate(def documentTemplate, Map model) {
         StringWriter output = new StringWriter()
         String templateContents = new String(documentTemplate.fileContents)
         Template template = groovyPagesTemplateEngine.createTemplate(templateContents, documentTemplate.name)
@@ -47,7 +47,7 @@ class DocumentTemplateService {
         return output.toString()
     }
 
-    def renderInvoiceTemplate(Document documentTemplate, Shipment shipmentInstance, ByteArrayOutputStream outputStream) {
+    def renderInvoiceTemplate(def documentTemplate, Shipment shipmentInstance, ByteArrayOutputStream outputStream) {
         InputStream inputStream = new ByteArrayInputStream(documentTemplate.fileContents)
         Context context = new Context()
         context.putVar("invoiceItems", shipmentInstance?.shipmentItems)
@@ -63,7 +63,7 @@ class DocumentTemplateService {
         JxlsHelper.getInstance().processTemplateAtCell(inputStream, outputStream, context, "Sheet1!A1")
     }
 
-    def renderOrderDocumentTemplate(Document documentTemplate, Order orderInstance, ConverterTypeTo targetDocumentType, OutputStream outputStream) {
+    def renderOrderDocumentTemplate(def documentTemplate, Order orderInstance, ConverterTypeTo targetDocumentType, OutputStream outputStream) {
         try {
             Boolean isVelocityTemplate = documentTemplate.filename.contains(".vm") || documentTemplate.filename.contains(".vtl")
 
@@ -262,7 +262,7 @@ class DocumentTemplateService {
     }
 
     // TODO: make it generic for requistions and orders
-    def renderRequisitionDocumentTemplate(Document documentTemplate, Requisition requisitionInstance, ConverterTypeTo targetDocumentType, OutputStream outputStream) {
+    def renderRequisitionDocumentTemplate(def documentTemplate, Requisition requisitionInstance, ConverterTypeTo targetDocumentType, OutputStream outputStream) {
         try {
             InputStream inputStream = new ByteArrayInputStream(documentTemplate.fileContents)
             IXDocReport report = XDocReportRegistry.getRegistry().loadReport(inputStream, TemplateEngineKind.Freemarker)

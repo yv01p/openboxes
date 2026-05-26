@@ -12,12 +12,23 @@ package org.pih.warehouse.shipping
 import grails.gorm.transactions.Transactional
 import grails.validation.Validateable
 import org.pih.warehouse.core.Document
+import org.springframework.web.multipart.MultipartFile
 
 @Transactional
 class DocumentUploadController {
+
+    def documentClient
+
     def upload(DocumentUploadCommand command) {
         def shipment = Shipment.get(command.shipmentId)
-        shipment.addToDocuments(command.document)
+        // Upload to document-service; re-attach via proxy id so the shipment_document join
+        // (still Grails-managed this slice) records the row.
+        Map created = documentClient.create(
+                command.file?.originalFilename,
+                command.file?.originalFilename,
+                command.file?.contentType,
+                command.file?.bytes)
+        shipment.addToDocuments(Document.load(created.id))
         redirect(action: 'view', id: command.shipmentId)
     }
     def form() {
@@ -29,5 +40,5 @@ class DocumentUploadController {
 
 class DocumentUploadCommand implements Validateable {
     String shipmentId
-    Document document
+    MultipartFile file
 }

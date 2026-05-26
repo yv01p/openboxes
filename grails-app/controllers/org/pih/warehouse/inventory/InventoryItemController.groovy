@@ -42,6 +42,7 @@ class InventoryItemController {
     def forecastingService
     def userService
     def productAvailabilityService
+    def documentClient
     GrailsApplication grailsApplication
     InventoryItemDataService inventoryItemDataService
 
@@ -84,7 +85,11 @@ class InventoryItemController {
         commandInstance.product = Product.get(params.id)
         log.info "${controllerName}.${actionName}: " + (System.currentTimeMillis() - startTime) + " ms"
         log.info "Product " + commandInstance.product
-        render(template: "showCurrentStock", model: [commandInstance: commandInstance])
+        // Zebra templates were previously looked up inline in _actionsCurrentStock.gsp via
+        // Document.findAllByDocumentCode(...). Pre-fetch here so the GSP can stay GORM-free
+        // (Task 8b: GSP-side Document calls pushed into wrapping controller actions).
+        List<Map> zebraTemplates = documentClient.findByCode('ZEBRA_TEMPLATE') ?: []
+        render(template: "showCurrentStock", model: [commandInstance: commandInstance, zebraTemplates: zebraTemplates])
     }
 
 

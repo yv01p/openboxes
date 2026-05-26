@@ -19,7 +19,6 @@ import org.apache.commons.lang.text.StrSubstitutor
 import org.pih.warehouse.core.Comment
 import org.pih.warehouse.core.Document
 import org.pih.warehouse.core.DocumentService
-import org.pih.warehouse.core.DocumentType
 import org.pih.warehouse.core.Event
 import org.pih.warehouse.core.EventType
 import org.pih.warehouse.core.Location
@@ -44,6 +43,7 @@ class ShipmentController {
     def barcodeService
     def sessionFactory
     DocumentService documentService
+    def documentClient
 
     def redirect() {
         redirect(controller: "shipment", action: "showDetails", id: params.id)
@@ -813,11 +813,11 @@ class ShipmentController {
 
     def addDocument() {
         Shipment shipmentInstance = Shipment.get(params.id)
-        Document documentInstance = Document.get(params?.document?.id)
-        List<DocumentType> documentTypes = documentService.getNonTemplateDocumentTypes()
+        Map documentInstance = params?.document?.id ? documentClient.fetchById(params.document.id) : null
+        List<Map> documentTypes = documentService.getNonTemplateDocumentTypes()
 
         if (!documentInstance) {
-            documentInstance = new Document()
+            documentInstance = [:]
         }
         if (!shipmentInstance) {
             flash.message = "${warehouse.message(code: 'default.not.found.message', args: [warehouse.message(code: 'shipment.label', default: 'Shipment'), params.id])}"
@@ -832,8 +832,8 @@ class ShipmentController {
 
     def editDocument() {
         Shipment shipmentInstance = Shipment.get(params?.shipmentId)
-        Document documentInstance = Document.get(params?.documentId)
-        List<DocumentType> documentTypes = documentService.getNonTemplateDocumentTypes()
+        Map documentInstance = documentClient.fetchById(params?.documentId)
+        List<Map> documentTypes = documentService.getNonTemplateDocumentTypes()
 
         if (!shipmentInstance) {
             flash.message = "${warehouse.message(code: 'default.not.found.message', args: [warehouse.message(code: 'shipment.label', default: 'Shipment'), params.shipmentId])}"
@@ -923,11 +923,12 @@ class ShipmentController {
 
 
     def deleteDocument() {
-        def document = Document.get(params.id)
+        Map document = documentClient.fetchById(params.id)
         def shipment = Shipment.get(params.shipmentId)
         if (shipment && document) {
-            shipment.removeFromDocuments(document)
-            document.delete()
+            // Join row still managed by Grails this slice; detach by proxy id, then delete via document-service.
+            shipment.removeFromDocuments(Document.load(document.id))
+            documentClient.delete(document.id)
             shipment.merge(flush: true)
             flash.message = "${warehouse.message(code: 'shipping.deletedDocumentFromShipment.message', args: [params.id])}"
         } else {

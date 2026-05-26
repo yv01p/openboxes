@@ -18,7 +18,6 @@ import grails.web.context.ServletContextHolder
 import org.apache.commons.io.FilenameUtils
 import org.hibernate.Criteria
 import org.pih.warehouse.core.Document
-import org.pih.warehouse.core.DocumentType
 import org.pih.warehouse.core.Location
 import org.pih.warehouse.core.MailService
 import org.pih.warehouse.core.ProductPrice
@@ -45,6 +44,7 @@ class ProductController {
     MailService mailService
     def productService
     def documentService
+    def documentClient
     def barcodeService
     def productMergeService
     UploadService uploadService
@@ -448,7 +448,7 @@ class ProductController {
 
         if (params.url) {
 
-            Document documentInstance
+            Map documentInstance
             try {
                 def filename = params.url.tokenize("/")[-1]
                 def fileOutputStream = new FileOutputStream(filename)
@@ -459,24 +459,17 @@ class ProductController {
                 File file = new File(filename)
                 def contentType = new MimetypesFileTypeMap().getContentType(file)
 
-                documentInstance = new Document(
-                        size: file.size(),
-                        name: file.name,
-                        filename: file.name,
-                        fileContents: file.bytes,
-                        contentType: contentType)
-
-                if (documentInstance?.validate() && !documentInstance?.hasErrors()) {
+                // Upload to document-service; join-table side resolved via Document.load(id).
+                // TODO: collapse when Product migrates (Phase 2+).
+                documentInstance = documentClient.create(file.name, file.name, contentType, file.bytes)
+                if (documentInstance) {
                     log.info "Saving document " + documentInstance
-                    command.product.addToDocuments(documentInstance).save(flush: true)
+                    command.product.addToDocuments(Document.load(documentInstance.id)).save(flush: true)
                     flash.message = "${warehouse.message(code: 'document.successfullySavedToProduct.message', args: [command?.product?.name])}"
-                }
-                // If there are errors, we need to redisplay the document form
-                else {
-                    log.info "Document did not save " + documentInstance.errors
-                    flash.message = "${warehouse.message(code: 'document.cannotSave.message', args: [documentInstance.errors])}"
+                } else {
+                    flash.message = "${warehouse.message(code: 'document.cannotSave.message', args: ['document-service create returned null'])}"
                     redirect(controller: "product", action: "edit", id: command?.product?.id,
-                            model: [productInstance: command?.product, documentInstance: documentInstance])
+                            model: [productInstance: command?.product])
                     return
                 }
 
@@ -495,36 +488,27 @@ class ProductController {
                 flash.message = "${warehouse.message(code: 'document.documentCannotBeEmpty.message')}"
             } else if (file.size < 10 * 1024 * 1000) {
                 log.info "Creating new document "
-                Document documentInstance = new Document(
-                        size: file.size,
-                        name: file.originalFilename,
-                        filename: file.originalFilename,
-                        fileContents: file.bytes,
-                        contentType: file.contentType,
-                        documentNumber: command.documentNumber,
-                        documentType: command.documentType)
-
                 if (!command?.product) {
-                    log.info "Cannot add document " + documentInstance + "  because product does not exist"
+                    log.info "Cannot add document because product does not exist"
                     flash.message = "${warehouse.message(code: 'document.productDoesNotExist.message')}"
                     redirect(controller: "product", action: "list")
                     return
+                }
+                Map documentInstance = documentClient.create(
+                        file.originalFilename,
+                        file.originalFilename,
+                        file.contentType,
+                        file.bytes,
+                        command.documentType?.id)
+                if (documentInstance) {
+                    log.info "Saving document " + documentInstance
+                    command.product.addToDocuments(Document.load(documentInstance.id)).save(flush: true)
+                    flash.message = "${warehouse.message(code: 'document.successfullySavedToProduct.message', args: [command?.product?.name])}"
                 } else {
-
-                    // Check to see if there are any errors
-                    if (documentInstance.validate() && !documentInstance.hasErrors()) {
-                        log.info "Saving document " + documentInstance
-                        command.product.addToDocuments(documentInstance).save(flush: true)
-                        flash.message = "${warehouse.message(code: 'document.successfullySavedToProduct.message', args: [command?.product?.name])}"
-                    }
-                    // If there are errors, we need to redisplay the document form
-                    else {
-                        log.info "Document did not save " + documentInstance.errors
-                        flash.message = "${warehouse.message(code: 'document.cannotSave.message', args: [documentInstance.errors])}"
-                        redirect(controller: "product", action: "edit", id: command?.product?.id,
-                                model: [productInstance: command?.product, documentInstance: documentInstance])
-                        return
-                    }
+                    flash.message = "${warehouse.message(code: 'document.cannotSave.message', args: ['document-service create returned null'])}"
+                    redirect(controller: "product", action: "edit", id: command?.product?.id,
+                            model: [productInstance: command?.product])
+                    return
                 }
             } else {
                 log.info "Document is too large"
@@ -545,13 +529,14 @@ class ProductController {
             flash.message = "${warehouse.message(code: 'default.not.found.message', args: [warehouse.message(code: 'product.label', default: 'Product'), params.product.id])}"
             redirect(action: "list")
         } else {
-            def documentInstance = Document.get(params?.id)
+            Map documentInstance = documentClient.fetchById(params?.id)
             if (!documentInstance) {
                 flash.message = "${warehouse.message(code: 'default.not.found.message', args: [warehouse.message(code: 'document.label', default: 'Document'), params.id])}"
                 redirect(action: "edit", id: productInstance?.id)
             } else {
-                productInstance.removeFromDocuments(documentInstance)
-                documentInstance?.delete()
+                // Detach the join row Grails-side, then delete via document-service.
+                productInstance.removeFromDocuments(Document.load(documentInstance.id))
+                documentClient.delete(documentInstance.id)
                 if (!productInstance.hasErrors() && productInstance.save(flush: true)) {
                     flash.message = "${warehouse.message(code: 'default.updated.message', args: [warehouse.message(code: 'product.label', default: 'Product'), productInstance.id])}"
                     redirect(controller: "inventoryItem", action: "showStockCard", id: productInstance?.id)
@@ -604,9 +589,9 @@ class ProductController {
 
 
     def renderImage() {
-        def documentInstance = Document.get(params.id)
+        Map documentInstance = documentClient.fetchById(params.id)
         if (documentInstance) {
-            response.outputStream << documentInstance.fileContents
+            response.outputStream << documentClient.fetchContent(params.id)
         } else {
             response.sendError(404)
         }
@@ -614,21 +599,23 @@ class ProductController {
 
     def downloadDocument() {
         log.info 'downloadDocument: {}', params
-        def documentInstance = Document.get(params.id)
+        Map documentInstance = documentClient.fetchById(params.id)
         if (documentInstance) {
             response.setHeader "Content-disposition", "attachment;filename=\"${documentInstance.filename}\""
             response.contentType = documentInstance.contentType
-            response.outputStream << documentInstance.fileContents
+            response.outputStream << documentClient.fetchContent(params.id)
             response.outputStream.flush()
         }
     }
 
     def viewThumbnail() {
         log.info 'viewThumbnail: {}', params
-        def documentInstance = Document.get(params.id)
+        Map documentInstance = documentClient.fetchById(params.id)
         if (documentInstance) {
-            if (documentInstance.isImage()) {
-                documentService.scaleImage(documentInstance, response.outputStream, 200, 200)
+            if (documentInstance.contentType?.startsWith('image/')) {
+                // scaleImage needs the bytes — wrap into a Map mirroring the legacy Document shape.
+                Map withBytes = documentInstance + [fileContents: documentClient.fetchContent(params.id)]
+                documentService.scaleImage(withBytes, response.outputStream, 200, 200)
             } else if (documentInstance.fileUri) {
                 def imageContent = servletContext.getResource("/images/icons/silk/link.png")
                 response.contentType = 'image/png'
@@ -1115,11 +1102,11 @@ class ProductController {
 
     def addDocument() {
         Product productInstance = Product.get(params.id)
-        Document documentInstance = Document.get(params?.document?.id)
-        List<DocumentType> documentTypes = documentService.getNonTemplateDocumentTypes()
+        Map documentInstance = params?.document?.id ? documentClient.fetchById(params.document.id) : null
+        List<Map> documentTypes = documentService.getNonTemplateDocumentTypes()
 
         if (!documentInstance) {
-            documentInstance = new Document()
+            documentInstance = [:]
         }
         if (!productInstance) {
             flash.message = "${warehouse.message(code: 'default.not.found.message', args: [warehouse.message(code: 'product.label', default: 'Product'), params.id])}"

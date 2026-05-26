@@ -10,12 +10,11 @@
 package org.pih.warehouse.shipping
 
 import grails.gorm.transactions.Transactional
-import org.pih.warehouse.core.DocumentCode
-import org.pih.warehouse.core.DocumentType
-import org.pih.warehouse.core.Document
 
 @Transactional
 class ShipmentWorkflowController {
+
+    def documentClient
 
     static allowedMethods = [save: "POST", update: "POST", delete: "POST"]
 
@@ -108,8 +107,10 @@ class ShipmentWorkflowController {
     }
 
 
-    List getDocumentTemplates() {
-        def documentTypes = DocumentType.findAllByDocumentCodeInList([DocumentCode.SHIPPING_TEMPLATE, DocumentCode.INVOICE_TEMPLATE])
-        Document.findAllByDocumentTypeInList(documentTypes)
+    List<Map> getDocumentTemplates() {
+        // document-service exposes findByCode (single code at a time) and findByTypeIds.
+        // For the two-code-list case we issue parallel findByCode lookups and concatenate.
+        return (documentClient.findByCode('SHIPPING_TEMPLATE') ?: []) +
+               (documentClient.findByCode('INVOICE_TEMPLATE') ?: [])
     }
 }

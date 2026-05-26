@@ -70,6 +70,7 @@ class DocumentService {
 
     GrailsApplication grailsApplication
     def userService
+    def documentClient
 
     private getMessageTagLib() {
         return grailsApplication.mainContext.getBean('org.pih.warehouse.MessageTagLib')
@@ -87,7 +88,12 @@ class DocumentService {
      * For best results on a hiDPI display, set `width` and `height` to 2x or 3x
      * the desired size, then use the nailthumb jquery plugin to place the image.
      */
-    void scaleImage(org.pih.warehouse.core.Document document, OutputStream outputStream, int width, int height) {
+    /**
+     * Accepts a Map (post-Task-8b document-service shape) with keys {filename, extension,
+     * contentType, fileContents}. Groovy property access works the same on Map and on the
+     * legacy Document entity, so callers in transition can still pass a Document.
+     */
+    void scaleImage(def document, OutputStream outputStream, int width, int height) {
         log.info "Scale image ${document.filename} width=${width} height=${height} contentType=${document.contentType}"
         try {
             final formatName = (document.extension ?: FilenameUtils.getExtension(document.filename))?.toLowerCase()
@@ -1628,15 +1634,13 @@ class DocumentService {
         return documents
     }
 
-    List<DocumentType> getNonTemplateDocumentTypes() {
-        return DocumentType.createCriteria().list() {
-            or {
-                isNull("documentCode")
-                not {
-                    'in'('documentCode', DocumentCode.templateList())
-                }
-            }
-        }.sort { it.name }
+    /**
+     * Delegates to document-service via documentClient (Task 8b). Returns Maps with the
+     * DocumentType JSON shape: {id, version, name, description, sortOrder, dateCreated,
+     * lastUpdated, documentCode}.
+     */
+    List<Map> getNonTemplateDocumentTypes() {
+        return documentClient.nonTemplateDocumentTypes()
     }
 
 }

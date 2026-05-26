@@ -42,8 +42,7 @@
             </a>
         </div>
         <g:if test="${isSuperuser}">
-            <g:set var="templates" value="${org.pih.warehouse.core.Document.findAllByDocumentCode(org.pih.warehouse.core.DocumentCode.ZEBRA_TEMPLATE)}"/>
-            <g:each in="${templates}" var="template">
+            <g:each in="${zebraTemplates}" var="template">
                 <hr/>
                 <div class="action-menu-item">
                     <a href="javascript:void(-1)">
