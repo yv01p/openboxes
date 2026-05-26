@@ -48,7 +48,7 @@
 - `grails-app/controllers/org/pih/warehouse/shipping/ShipmentWorkflowController.groovy` — line 113 — `Document.findAllByDocumentTypeInList`
 - `grails-app/services/org/pih/warehouse/data/MigrationService.groovy` — line 1192 — `new Document()`
 - `grails-app/controllers/org/pih/warehouse/shipping/DocumentUploadController.groovy` — line 20 — the 8th caller per spec A21
-- `grails-app/services/org/pih/warehouse/core/DocumentService.groovy` — KEEPS its file/Excel/PDF/image utility methods; the 6 Document-entity-facing methods (`getNonTemplateDocumentTypes`, `getAllDocumentsBySupplierOrganization`, and 4 others surfaced during Task 1 audit) become thin shims that delegate to `documentClient`. This service does NOT get deleted in Task 10.
+- `grails-app/services/org/pih/warehouse/core/DocumentService.groovy` — KEEPS its file/Excel/PDF/image utility methods; the Document-entity-facing methods (currently `getNonTemplateDocumentTypes` plus any additional entity-rooted methods surfaced during Task 1 audit) become thin shims that delegate to `documentClient`. This service does NOT get deleted in Task 10. **`getAllDocumentsBySupplierOrganization` STAYS Grails-side unchanged** — its projection root is `Order` (filtered by `originParty` + `orderType = PURCHASE_ORDER`), traversing `Order.documents` only for left-join enrichment; semantically it is an Order-rooted report, not a Document query, and its future home is order-service when Order is extracted (post-Phase 1).
 - `grails-app/views/order/_summary.gsp:242`, `grails-app/views/order/_orderDocuments.gsp:2`, `grails-app/views/inventoryItem/_actionsCurrentStock.gsp:45` — remove inline `Document.findAllByDocumentCode(...)` calls; use a model variable that the wrapping controller action (`OrderController.show`/`edit`/whichever, `InventoryItemController.showStockCard`/whichever) pre-fetches via `documentClient` and passes through to the `<g:render template="..."/>` include
 - `grails-app/controllers/org/pih/warehouse/UrlMappings.groovy` — remove `/document/*` mappings (if any exist; Task 1 audit confirms)
 
@@ -104,7 +104,7 @@ Newly introduced by this plan (paths, signatures, commands, ordering, consumer i
 | P18 | sig | `document_type.id` column has MIXED types in seed data: integers `1,2,3,...` AND a UUID string `66762f6c61e34cfd9297ecb0fcee2df2`. JPA `@Id` MUST be `String` (not `Long`) to accommodate both | `mysql -e "SELECT id FROM document_type LIMIT 10"` returned both forms |
 | P19 | sig | **SPEC CORRECTION (§9):** `DataExportController` has actions named `index()` and `render()`, NOT `list/download` as spec §9 implies. Spec lines 23 + 28 are inside these actions | `grep "def [a-z]+" DataExportController.groovy` returned `def index()`, `def render()` |
 | P20 | sig | `DocumentService.groovy` is ~1200 lines and contains BOTH Document-entity methods AND unrelated file/Excel/PDF/image utility methods (`generateExcel`, `findFile`, `scaleImage`, `generatePackingList`, `convertToPdf`, `generateInventoryTemplate`, `generateChecklistAsDocx`, `generateStocklistCsv`, `generateCertificateOfDonation`, `generatePartialPackingList`) | `grep "^\s*(def\|String\|List\|void) [a-zA-Z]" DocumentService.groovy` enumerated method surface |
-| P21 | sig | `documentService.*` has ~25+ caller sites across 20+ controllers/services. The 6 Document-entity-facing callers (`getNonTemplateDocumentTypes`, `getAllDocumentsBySupplierOrganization`, etc.) need migration to use `documentClient`; the 20+ file-utility callers stay calling Grails DocumentService unchanged | `grep -rn "documentService\." grails-app/` returned the full caller list |
+| P21 | sig | `documentService.*` has ~25+ caller sites across 20+ controllers/services. The Document-entity-facing callers (currently `getNonTemplateDocumentTypes` from 5 controllers; further entity-facing methods TBD via Task 1 audit) need migration to use `documentClient`; the 20+ file-utility callers stay calling Grails DocumentService unchanged. `getAllDocumentsBySupplierOrganization` is excluded — it's an Order-rooted query, see File Structure note above | `grep -rn "documentService\." grails-app/` returned the full caller list |
 | P22 | sig | `apiClient` in `src/js/utils/apiClient.js` forwards cookies automatically (Phase 0 retrospective confirmed) | Phase 0 retrospective §"Code-level" gotchas |
 | P23 | sig | `OPENBOXES_JWT_SECRET` env var is wired in `docker-compose-base.yml` `app` service (Phase 0 Task 2 added it); plan adds same env var to `document-service` entry so both sides validate with shared secret | Phase 0 commit `79ca66e` diff |
 | P24 | sig | Grails 3.3.16 supports a Groovy service class using `groovy.json.JsonSlurper` + `java.net.HttpURLConnection` for outbound HTTP. Plan uses these for `DocumentClient.groovy` (no new dependency) | Groovy stdlib; no spec issue |
@@ -660,7 +660,7 @@ public class DocumentService {
     public void delete(String id) { docRepo.deleteById(id); }
 }
 ```
-The 4 additional entity-facing methods beyond `getNonTemplateDocumentTypes` + `getAllDocumentsBySupplierOrganization` from spec are TBD via Task 1 audit. Add them here.
+Beyond `getNonTemplateDocumentTypes`, port any additional Document-entity-facing methods that Task 1 audit surfaced (excluding `getAllDocumentsBySupplierOrganization`, which is an Order-rooted query and stays Grails-side per File Structure note).
 
 - [ ] **Step 2: Commit.**
 ```bash
@@ -1168,8 +1168,8 @@ Per scope-creep guardrail, this is the 8th expected caller. Migrate same as othe
 - `views/order/_summary.gsp:242` — trace to `OrderController` action that renders the wrapping page (probably `show` or `edit`). Pre-fetch in the action; pass via model.
 - `views/order/_orderDocuments.gsp:2` — same trace, same migration.
 
-- [ ] **Step 15: Convert `DocumentService.groovy`'s 6 entity-facing methods to delegations.**
-The methods `getNonTemplateDocumentTypes()`, `getAllDocumentsBySupplierOrganization(...)`, and ~4 others identified by Task 1 audit, become thin shims:
+- [ ] **Step 15: Convert `DocumentService.groovy`'s entity-facing methods to delegations.**
+The methods `getNonTemplateDocumentTypes()` plus any further entity-facing methods identified by Task 1 audit become thin shims (`getAllDocumentsBySupplierOrganization` is NOT in this set — see File Structure note):
 ```groovy
 List<Map> getNonTemplateDocumentTypes() {
     return documentClient.nonTemplateDocumentTypes()
