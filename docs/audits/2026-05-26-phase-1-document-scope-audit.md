@@ -45,20 +45,31 @@ attaches a thin reference (or, post-migration, a row insert via the still-Grails
 
 ### (b) `Document.delete` / `documentInstance.delete` / `document?.delete`
 
+The plan's literal grep pattern (`Document\.delete\|documentInstance\.delete\|document\?\.delete`)
+does NOT match `documentInstance?.delete()` (the regex needs `documentInstance\??\.delete`).
+A permissive grep — `grep -rnE "(Document|documentInstance|document)\??\.delete\(" grails-app/` —
+surfaces a 3rd site that the plan's literal pattern missed:
+
 ```
 grails-app/controllers/org/pih/warehouse/shipping/ShipmentController.groovy:930:   document.delete()
 grails-app/controllers/org/pih/warehouse/core/DocumentController.groovy:168:       documentInstance.delete(flush: true)
+grails-app/controllers/org/pih/warehouse/product/ProductController.groovy:554:     documentInstance?.delete()
 ```
 
-**Classification:** Both calls become HTTP `DELETE /api/documents/{id}` to `document-service`
+**Classification:** All 3 calls become HTTP `DELETE /api/documents/{id}` to `document-service`
 in Task 8b. They are **read-only-from-owner-context cross-context writes** — neither hits the
 owning entity's tables, only the `document` table — so a plain sync HTTP call (with
 forwarded cookie auth, per spec §6) is correct. The `ShipmentController` case (line 929-930)
-combines a `removeFromDocuments` (local M:N) and a `document.delete()` (HTTP) — these are
-two distinct operations and the audit confirms they are not atomic-across-contexts in a way
-that requires a saga (failure of the HTTP delete leaves an orphaned join row pointing to a
-deleted document id — same failure mode as today's network partition, acceptable for
-admin-scale Document deletes per the §4.3 deferral to Phase 7).
+and the `ProductController` case (line 553-554) both combine a `removeFromDocuments` (local
+M:N) with a `document.delete()` / `documentInstance?.delete()` (HTTP) — these are two distinct
+operations and the audit confirms they are not atomic-across-contexts in a way that requires a
+saga (failure of the HTTP delete leaves an orphaned join row pointing to a deleted document id
+— same failure mode as today's network partition, acceptable for admin-scale Document deletes
+per the §4.3 deferral to Phase 7). Phase 1 uses sync HTTP with cookie forwarding for both
+the `removeFromDocuments` (local-to-owner) and `DELETE /api/documents/{id}` calls in each
+remove-then-delete pair. Task 8b's ProductController migration recipe MUST include the
+`documentInstance?.delete()` translation alongside the `removeFromDocuments` translation —
+otherwise the row in `document` is orphaned after the join is stripped.
 
 ### (c) `new Document(` + `documentInstance.save` / `document.save`
 
@@ -127,14 +138,18 @@ etc.). No saga required.
 | Pattern | Count | Classification | Phase 1 strategy |
 |---|---|---|---|
 | M:N link write on owning side | 13 | Local-to-owner | Owning service writes join row locally; HTTP call only for the Document row |
-| Document deletes | 2 | Cross-context write (admin-scale) | Sync HTTP `DELETE /api/documents/{id}` with cookie forwarding |
+| Document deletes | 3 | Cross-context write (admin-scale) | Sync HTTP `DELETE /api/documents/{id}` with cookie forwarding |
 | `new Document(...)` constructions | 10 | Cross-context write (admin-scale) | Sync HTTP `POST /api/documents` |
 | Entity-facing `documentService.` reads | 9 | Cross-context read | Sync HTTP `GET /api/documents...` |
 | Utility `documentService.` calls (file/Excel/PDF/etc.) | ~34 | Stays local (Grails-side) | No change |
 
-**No 2-context atomic write patterns surfaced — no saga required for Phase 1.**
-This confirms the spec's §4.3 deferral of sagas to Phase 7 and the plan's "sync HTTP with
-cookie forwarding for admin-scale Document writes" decision.
+**2 sites are remove-join-then-delete-document pairs** (`ShipmentController:929-930` and
+`ProductController:553-554`); both are classified per spec §4.3 as **acceptable without saga**
+— the failure mode of an orphan `document` row on a connection drop between the two HTTP
+calls matches today's network-partition failure mode and is acceptable for admin-scale
+Document operations. No 2-context atomic write patterns require a saga for Phase 1. This
+confirms the spec's §4.3 deferral of sagas to Phase 7 and the plan's "sync HTTP with cookie
+forwarding for admin-scale Document writes" decision.
 
 ---
 
@@ -169,10 +184,12 @@ Source-of-migration files (NOT in "Modify" — they migrate themselves):
 Scope-creep guardrail: **NOT triggered.** Plan revision NOT required. Continue with plan
 as written.
 
-The grep also surfaced ~30 controller/service files that inject `documentService` and call
-only its file/Excel/PDF/image *utility* methods (`generateExcel`, `generateInventoryTemplate`,
-`generatePackingList`, `generateCertificateOfDonation`, `findFile`, etc.). Per P20 these
-remain on the Grails side and **do not need to be modified in Phase 1**.
+The grep also surfaced **23 controller/service files** that inject `documentService` (exact
+count from `grep -rnlE "documentService" grails-app/controllers grails-app/services | sort -u
+| wc -l`). The non-entity-facing callers among them call only its file/Excel/PDF/image
+*utility* methods (`generateExcel`, `generateInventoryTemplate`, `generatePackingList`,
+`generateCertificateOfDonation`, `findFile`, etc.). Per P20 these utility-only callers remain
+on the Grails side and **do not need to be modified in Phase 1**.
 
 ---
 
@@ -199,8 +216,10 @@ also accept this cookie via the JWT filter wired in Phase 0.
    seed database (verified via `document/show/1` also failing to resolve, and the
    `dataExport/index` page rendering with no items). When Task 11 (Playwright E2E tests)
    adds tests for this flow, the test must first POST a Document via the new
-   `/api/documents` endpoint to seed the row, then exercise `dataExport/render`. This is a
-   test-data setup requirement, **not** a Document-flow defect for Phase 1.
+   `/api/documents` endpoint with `documentCode = "DATA_EXPORT"` (the DocumentType code the
+   `dataExport` controller looks up via `Document.findAllByDocumentCode(...)`), then exercise
+   `dataExport/render`. This is a test-data setup requirement, **not** a Document-flow defect
+   for Phase 1.
 2. **`invoice/list` → handleForbidden.** Documented in Phase 0 retrospective; admin@MainWarehouse
    lacks ROLE_INVOICE permissions. The InvoiceController still uses the static
    `Document.findByName / removeFromDocuments` patterns elsewhere; those are exercised via
@@ -225,7 +244,27 @@ grails-app/migrations/0.8.x/changelog-2018-10-25-1318-configure-shipping-templat
 grails-app/migrations/0.8.x/changelog-2022-01-03-1524-configure-invoice-templates.xml
 ```
 
-Combined enumeration (7 changeset files) with content classification:
+A 3rd, even broader grep on `referencedTableName="document"` (i.e. FKs that *reference*
+`document.id` from a non-`document`-owned base table) surfaces 1 more file that NEITHER the
+filename `find` NOR the `tableName=` grep caught:
+
+```
+grails-app/migrations/0.7.x/changelog-2016-05-04-2329-add-missing-foreign-key-constraints.xml
+```
+
+(In this file, changeset `1462422439127-18` adds `product_document.document_id → document.id`
+— a cross-service FK from a join table that is owned by the future product-service to the
+`document` table owned by document-service. Same cross-service-FK story as the other
+join-table files below.)
+
+**Plan-find gap.** The plan's Task 6 enumeration step uses filename `find` only, which misses
+all 3 of the above. Task 6 must additionally sweep with:
+
+```
+grep -rnE 'tableName="document"|tableName="document_type"|referencedTableName="document"|referencedTableName="document_type"' grails-app/migrations/
+```
+
+Combined enumeration (8 changeset files) with content classification:
 
 ### A. Document-table-owned (move to document-service in Task 6)
 
@@ -242,13 +281,50 @@ Combined enumeration (7 changeset files) with content classification:
 |---|---|---|---|---|
 | `0.8.x/changelog-2021-11-19-1446-create-table-invoice-document.xml` | 3 (`1911202114460-1/2/3`) | `createTable` `invoice_document` + 2 × `addForeignKeyConstraint` (one referencing `invoice`, one referencing `document`) | `invoice_document` join, references `invoice` and `document` | **STAY** with billing-service per spec §4.3 (billing-service owns invoice_document and migrates in Phase 10, NOT Phase 1). The FK to `document(id)` becomes a cross-service FK in the future; for now both tables co-exist in the monolith DB and the FK is preserved by Liquibase replay. **Do NOT move in Task 6.** |
 | `0.7.x/changelog-2017-03-01-1644-create-table-shipment-workflow-document-template.xml` | 3 (`1488408290676-1/2/3`) | `createTable` `shipment_workflow_document_template` + 2 × `addForeignKeyConstraint` (one to `document`, one to `product`) | `shipment_workflow_document_template` join, references `document` and `product` | **STAY** with shipment-service (Phase 5+). FK to `document(id)` preserved by monolith-co-residence. **Do NOT move in Task 6.** |
-| `0.7.x/changelog-2017-03-06-1953-add-shipping-document-templates.xml` | 6 (`1488850801102-1` … `-6`) | Mixed: `createTable` `shipment_workflow_document` (join) + `addColumn document_type.document_code` (**touches document_type!**) + `addColumn location_group.address_id` + 3 × `addForeignKeyConstraint` (shipment_workflow_document → document, → shipment_workflow; location_group → address) | `shipment_workflow_document` (join), `document_type` (changeset -2), `location_group` (unrelated) | **AMBIGUOUS / SPLIT-NEEDED.** Changeset `-2` adds the `document_code` column to `document_type`. The other 5 changesets are join-table / unrelated. Task 6 must **either (a)** split this file — cherry-pick `-2` into the document-service changelog while leaving the rest behind — **or (b)** keep the whole file on the Grails side and have document-service add `document_code` via a NEW changeset, marked `runOnChange="false"` with a `columnExists` precondition. Recommend option (b) for Task 6 to avoid breaking the historical changelog's integrity. **Flag for Task 6 author.** |
+| `0.7.x/changelog-2017-03-06-1953-add-shipping-document-templates.xml` | 6 (`1488850801102-1` … `-6`) | Mixed: `createTable` `shipment_workflow_document` (join) + `addColumn document_type.document_code` (**touches document_type!**) + `addColumn location_group.address_id` + 3 × `addForeignKeyConstraint` (shipment_workflow_document → document, → shipment_workflow; location_group → address) | `shipment_workflow_document` (join), `document_type` (changeset -2), `location_group` (unrelated) | **AMBIGUOUS / SPLIT-NEEDED.** Changeset `-2` adds the `document_code` column to `document_type`. The other 5 changesets are join-table / unrelated. Task 6 must **either (a)** split this file — cherry-pick `-2` into the document-service changelog while leaving the rest behind — **or (b)** keep the whole file on the Grails side and have document-service add `document_code` via a NEW changeset, marked `runOnChange="false"` with a `columnExists` precondition. Recommend option (b) for Task 6 to avoid breaking the historical changelog's integrity. **Flag for Task 6 author.** See "Task 6 prescription for this file" below. |
+| `0.7.x/changelog-2016-05-04-2329-add-missing-foreign-key-constraints.xml` | 1 of 50+ in this file (`1462422439127-18`) adds `product_document.document_id → document.id` | `addForeignKeyConstraint` referencing `document(id)` from `product_document` (non-document-owned join) | `product_document` (join), references `document` | **STAY** with product-service (future). The FK lives on a non-document-owned table referencing `document.id`; same cross-service-FK story as the other join-table files. The file itself contains 50+ unrelated FK constraints (inventory_item_snapshot, requisition, etc.) and **must NOT be relocated** — its only document-relevant changeset (`-18`) is preserved by monolith-co-residence and becomes a cross-service FK in the future. **Do NOT move in Task 6.** Surfaced by an additional `referencedTableName="document"` grep, NOT by the plan's filename `find` or the `tableName=` grep. |
+
+#### Task 6 prescription for `0.7.x/changelog-2017-03-06-1953-add-shipping-document-templates.xml` (split-state file)
+
+The Task 6 implementer can lift the following verbatim. Original file STAYS on the Grails side
+unchanged; document-service adds a NEW `columnExists`-guarded shadow changeset that
+marks-ran when the column already exists (which it always will, because Grails Liquibase has
+already added it via the original changeset).
+
+```xml
+<!-- services/document-service/src/main/resources/db/changelog/changelog-2017-03-06-1953-document-code-shadow.xml -->
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                                       http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.5.xsd">
+    <changeSet id="document-code-shadow-2017-03-06" author="phase-1-migration">
+        <preConditions onFail="MARK_RAN">
+            <columnExists tableName="document_type" columnName="document_code"/>
+        </preConditions>
+        <comment>
+            Shadow of changeset -2 from grails-app/migrations/0.7.x/changelog-2017-03-06-1953-add-shipping-document-templates.xml.
+            That file mixes a document_type.document_code addColumn with unrelated location_group + shipment_workflow_document work,
+            so it cannot be relocated to document-service via git mv. document-service marks-ran here instead so future additive
+            migrations on document_type apply cleanly under document-service's Liquibase scope. The original file stays on the
+            Grails side unchanged; Grails Liquibase continues to own it.
+        </comment>
+        <!-- No body: the column already exists per the precondition. -->
+    </changeSet>
+</databaseChangeLog>
+```
+
+Add the master-changelog `<include>` line to `services/document-service/src/main/resources/db/changelog/db.changelog-master.xml`:
+
+```xml
+<include file="db/changelog/changelog-2017-03-06-1953-document-code-shadow.xml"/>
+```
 
 ### Summary
 
-- **4 changesets** are pure-Document and **move** to `document-service/src/main/resources/db/changelog/` in Task 6.
-- **2 changesets** are pure join-table and **stay** with their future-owning service.
-- **1 changeset is split-state** (mixes a `document_type.document_code` addColumn with unrelated work). Task 6 should add a NEW `columnExists`-guarded changeset on the document-service side rather than relocating any part of the original file.
+- **4 files** are pure-Document and **move** to `document-service/src/main/resources/db/changelog/` in Task 6.
+- **3 files** are pure join-table / cross-service-FK and **stay** with their future-owning service (`invoice_document`, `shipment_workflow_document_template`, and `add-missing-foreign-key-constraints.xml`'s `product_document → document` FK).
+- **1 file is split-state** (mixes a `document_type.document_code` addColumn with unrelated work). Task 6 should add a NEW `columnExists`-guarded shadow changeset on the document-service side rather than relocating any part of the original file — concrete XML stub provided above under "Task 6 prescription for this file".
 
 Changeset-type breakdown (4 to move):
 - `insert` × 3 (seed data for DocumentType rows)
