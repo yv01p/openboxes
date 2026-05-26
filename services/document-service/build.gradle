@@ -1,3 +1,8 @@
+// Spring Boot 3.3.5 BOM pins testcontainers to 1.19.8, whose bundled docker-java client
+// only speaks API 1.32 and is rejected by Docker Engine 29 ("client version 1.32 is too old").
+// Override the BOM so our 1.21.x request actually sticks.
+ext['testcontainers.version'] = '1.21.3'
+
 dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
@@ -13,4 +18,28 @@ dependencies {
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'org.springframework.security:spring-security-test'
+    // Task 11, Option A: TestContainers MariaDB. Lets the JUnit integration test boot the
+    // real Spring context (Liquibase + Hibernate validate) against a throwaway DB container
+    // without needing the dev compose stack on the host network.
+    // 1.21.x bumps the embedded docker-java client API floor to 1.44, matching Docker Engine
+    // 29 (cf. gradle.properties comment on dockerApiVersion). 1.20.x emits
+    // "client version 1.32 is too old" against this host's docker daemon.
+    testImplementation 'org.testcontainers:junit-jupiter:1.21.3'
+    testImplementation 'org.testcontainers:mariadb:1.21.3'
+}
+
+// Spring Boot 3.x's plugin should configure JUnit Platform automatically; declared
+// explicitly so a Gradle config change can't silently revert us to JUnit 4 vintage.
+test {
+    useJUnitPlatform()
+    // Force docker-java's Unix-socket strategy to negotiate API 1.44, which is the floor
+    // Docker Engine 29 accepts. docker-java's default is 1.32 (rejected by Engine 29 with
+    // "client version 1.32 is too old"). The TESTCONTAINERS_API_VERSION env var would also
+    // work, but a system property is reliable across `sudo -E` and gradle-daemon contexts.
+    systemProperty 'api.version', '1.44'
+    // Ryuk (the reaper container) opens a privileged side-channel; the dev host docker
+    // socket is owned root:docker (660), and ryuk's preflight fails on some setups.
+    // Disabling it is safe for a single-test-class run: the JVM shuts down promptly and
+    // the @Container static field is stopped by JUnit's extension regardless.
+    systemProperty 'testcontainers.ryuk.disabled', 'true'
 }
