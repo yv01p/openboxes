@@ -1,0 +1,21 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: document-service
+  datasource:
+    url: ${DATASOURCE_URL:jdbc:mariadb://db:3306/openboxes?serverTimezone=UTC&useSSL=false}
+    username: ${DATASOURCE_USERNAME:openboxes}
+    password: ${DATASOURCE_PASSWORD:openboxes}
+  jpa:
+    hibernate:
+      ddl-auto: validate  # Liquibase owns schema; JPA only validates the entity-to-table mapping
+    properties:
+      hibernate.dialect: org.hibernate.dialect.MariaDBDialect
+  liquibase:
+    change-log: classpath:db/changelog/document-changelog-master.xml
+
+openboxes:
+  jwt:
+    secret: ${OPENBOXES_JWT_SECRET:dev-secret-only-for-local-please-rotate-in-prod}

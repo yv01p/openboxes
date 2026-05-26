@@ -1,15 +1,23 @@
 # For running the app with a bundled, containerized database
 services:
     app:
-      extends: 
+      extends:
         file: docker-compose-base.yml
         service: app
-      depends_on: 
+      depends_on:
+        db:
+          condition: service_healthy
+
+    document-service:
+      extends:
+        file: docker-compose-base.yml
+        service: document-service
+      depends_on:
         db:
           condition: service_healthy
 
     nginx:
-      extends: 
+      extends:
         file: docker-compose-base.yml
         service: nginx
       depends_on:

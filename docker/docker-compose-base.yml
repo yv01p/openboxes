@@ -1,5 +1,8 @@
 services:
     app:
+      build:
+        context: ../build/docker
+        dockerfile: Dockerfile
       image: ${OB_IMAGE_REPOSITORY-ghcr.io/}openboxes/openboxes:${OB_VERSION:-latest}
       container_name: openboxes-app
       expose:
@@ -15,6 +18,25 @@ services:
         OPENBOXES_JWT_SECRET: ${OPENBOXES_JWT_SECRET:-dev-secret-only-for-local-please-rotate-in-prod}
       healthcheck:
         test: "curl --fail --silent localhost:8080/openboxes/health | grep UP || exit 1"
+        interval: 10s
+        timeout: 5s
+        retries: 5
+        start_period: 30s
+
+    document-service:
+      build:
+        context: ../services/document-service
+        dockerfile: Dockerfile
+      container_name: openboxes-document-service
+      expose:
+        - "8081"
+      environment:
+        DATASOURCE_URL: ${DATASOURCE_URL:-jdbc:mariadb://db:3306/openboxes?serverTimezone=UTC&useSSL=false}
+        DATASOURCE_USERNAME: ${DATASOURCE_USERNAME:-openboxes}
+        DATASOURCE_PASSWORD: ${DATASOURCE_PASSWORD:-openboxes}
+        OPENBOXES_JWT_SECRET: ${OPENBOXES_JWT_SECRET:-dev-secret-only-for-local-please-rotate-in-prod}
+      healthcheck:
+        test: "curl --fail --silent localhost:8081/actuator/health | grep UP || exit 1"
         interval: 10s
         timeout: 5s
         retries: 5

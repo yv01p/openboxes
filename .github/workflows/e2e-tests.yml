@@ -23,15 +23,18 @@ jobs:
           distribution: temurin
           cache: gradle
       - name: Build local image with current source
-        run: |
-          ./gradlew prepareDocker -Dgrails.env=prod --console=plain
-          docker build -t ghcr.io/openboxes/openboxes:latest build/docker/
+        run: ./gradlew prepareDocker -Dgrails.env=prod --console=plain
+      - name: Build document-service jar
+        working-directory: services
+        run: ./gradlew :document-service:bootJar
       - name: Boot docker compose stack
         working-directory: docker
         run: |
-          docker compose up -d
+          docker compose up --build -d
           for i in {1..60}; do
-            curl -sf http://localhost/openboxes/health && break
+            curl -sf http://localhost/openboxes/health \
+              && docker exec openboxes-document-service curl -sf localhost:8081/actuator/health \
+              && break
             sleep 5
           done
       - uses: actions/setup-node@v5
