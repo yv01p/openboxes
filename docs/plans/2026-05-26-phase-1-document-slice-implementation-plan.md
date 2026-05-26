@@ -556,6 +556,8 @@ import java.util.List;
 
 public interface DocumentRepository extends JpaRepository<Document, String> {
     List<Document> findByDocumentType_DocumentCode(DocumentCode code);
+    List<Document> findByName(String name);
+    List<Document> findByDocumentType_IdIn(List<String> typeIds);
 }
 
 // DocumentTypeRepository.java
@@ -626,6 +628,12 @@ public class DocumentService {
 
     public List<Document> findByCode(DocumentCode code) {
         return docRepo.findByDocumentType_DocumentCode(code);
+    }
+
+    public List<Document> findByName(String name) { return docRepo.findByName(name); }
+
+    public List<Document> findByTypeIds(List<String> typeIds) {
+        return docRepo.findByDocumentType_IdIn(typeIds);
     }
 
     public List<DocumentType> getNonTemplateDocumentTypes() {
@@ -713,6 +721,18 @@ public class DocumentController {
         return docService.findByCode(code);
     }
 
+    @Operation(summary = "Find document by name")
+    @GetMapping(params = "name")
+    public List<Document> listByName(@RequestParam String name) {
+        return docService.findByName(name);
+    }
+
+    @Operation(summary = "List documents whose document_type is in the given set")
+    @GetMapping(params = "typeIds")
+    public List<Document> listByTypeIds(@RequestParam List<String> typeIds) {
+        return docService.findByTypeIds(typeIds);
+    }
+
     @Operation(summary = "Upload document (multipart)")
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public Document create(@RequestParam("file") MultipartFile file,
@@ -783,15 +803,52 @@ Edit `grails-app/migrations/changelog.groovy` (or whichever is the master) — r
 </databaseChangeLog>
 ```
 
-- [ ] **Step 5: Verify shared DATABASECHANGELOG (A17 contract).**
-Per A17, `LiquibaseUtil` tracks per-file via `DATABASECHANGELOG.filename` SUBSTRING. The relocated changesets keep their filenames; the SUBSTRING match (`filename` LIKE `%basename%`) sees them as the same files. Grails Liquibase startup will see "already applied" and skip them. document-service Liquibase startup will see "already applied" too (same row in DATABASECHANGELOG). No double-execution.
+- [ ] **Step 5: Add `<preConditions onFail="MARK_RAN">` to each relocated changeset, then verify shared DATABASECHANGELOG.**
+
+A17's SUBSTRING reference is misleading for relocation: that SUBSTRING usage in `src/main/groovy/util/LiquibaseUtil.groovy:108` lives inside `getCurrentVersionsByFolderName()` and extracts the **version-folder name** (FILENAME segment before the first `/`) for backward-compat upgrade-path logic — it is NOT per-changeset dedup. Standard Spring Boot Liquibase (document-service's runner) deduplicates via the `(ID, AUTHOR, FILENAME)` tuple with exact FILENAME match. After Task 6 Step 2's `git mv`, the relocated changeset's FILENAME changes from `grails-app/migrations/0.8.x/changelog-…xml` to `db/changelog/changelog-…xml` (classpath-relative); document-service sees it as **new** and tries to re-execute against an already-populated schema → fails.
+
+Add `<preConditions onFail="MARK_RAN">` to every relocated changeset before first `docker-compose up` of document-service. Per changeset type:
+
+- **`<createTable>`** changesets:
+```xml
+<preConditions onFail="MARK_RAN">
+    <not><tableExists tableName="document"/></not>
+</preConditions>
+```
+- **`<addColumn>`** changesets:
+```xml
+<preConditions onFail="MARK_RAN">
+    <not><columnExists tableName="document" columnName="file_uri"/></not>
+</preConditions>
+```
+- **`<modifyDataType>` / `<alterColumn>`** changesets — check via `<sqlCheck>`:
+```xml
+<preConditions onFail="MARK_RAN">
+    <not><sqlCheck expectedResult="VARCHAR(2000)">
+        SELECT DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_NAME='document' AND COLUMN_NAME='file_uri'
+    </sqlCheck></not>
+</preConditions>
+```
+- **`<insert>`** seed-data changesets — `<sqlCheck>` on row presence.
+
+`onFail="MARK_RAN"` records the changeset as ran in DATABASECHANGELOG (under the new FILENAME) without executing the body. document-service Liquibase startup completes; future additive migrations apply normally.
+
+Verify:
 ```bash
-# Verify: bring up the stack and inspect DATABASECHANGELOG row count for document changesets
+# First, capture pre-move count for comparison
+sudo docker exec openboxes-db mysql -u openboxes -popenboxes openboxes -Nse \
+  "SELECT COUNT(*) FROM DATABASECHANGELOG WHERE FILENAME LIKE '%document%';"
+# (record this number as PRE_COUNT)
+
+# Bring up the stack with the relocated + precondition-armed changesets
 cd docker && sudo docker-compose up -d --build && cd ..
 sleep 30
+
+# Re-count
 sudo docker exec openboxes-db mysql -u openboxes -popenboxes openboxes -e \
   "SELECT COUNT(*) FROM DATABASECHANGELOG WHERE FILENAME LIKE '%document%';"
-# Expect same count as before the move
+# Expect ≈ 2 × PRE_COUNT (each relocated changeset has both the old-FILENAME row from Grails history AND a new-FILENAME row from document-service MARK_RAN). Any count materially below 2×PRE_COUNT means a changeset re-executed against existing schema — investigate before proceeding.
 ```
 
 - [ ] **Step 6: Apply additive-only constraint (per §8 Step 6).**
@@ -1015,6 +1072,19 @@ class DocumentClient {
         return (List<Map>) new JsonSlurper().parse(conn.inputStream)
     }
 
+    List<Map> findByName(String name) {
+        HttpURLConnection conn = openConn("/api/documents?name=${URLEncoder.encode(name, 'UTF-8')}")
+        if (conn.responseCode != 200) throw new RuntimeException("document-service GET ?name=${name} returned ${conn.responseCode}")
+        return (List<Map>) new JsonSlurper().parse(conn.inputStream)
+    }
+
+    List<Map> findByTypeIds(List<String> typeIds) {
+        String csv = typeIds.collect { URLEncoder.encode(it, 'UTF-8') }.join(',')
+        HttpURLConnection conn = openConn("/api/documents?typeIds=${csv}")
+        if (conn.responseCode != 200) throw new RuntimeException("document-service GET ?typeIds returned ${conn.responseCode}")
+        return (List<Map>) new JsonSlurper().parse(conn.inputStream)
+    }
+
     List<Map> nonTemplateDocumentTypes() {
         HttpURLConnection conn = openConn("/api/documents/types/non-template")
         if (conn.responseCode != 200) throw new RuntimeException("document-service GET /types/non-template returned ${conn.responseCode}")
@@ -1022,11 +1092,24 @@ class DocumentClient {
     }
 
     Map create(String name, String filename, String contentType, byte[] fileContents, String documentTypeId = null) {
-        // multipart upload via HttpURLConnection — boilerplate omitted for brevity;
-        // implementer: see Apache HttpClient's MultipartEntityBuilder for cleaner approach if jjwt allows the dependency
-        // For the plan, implementer can decide between (a) raw multipart via HttpURLConnection, (b) Apache HttpClient (adds dep), (c) Spring RestTemplate via Grails Spring context
-        // Recommended: (c) — Grails already has Spring; minimal new surface
-        throw new UnsupportedOperationException("TODO: implement multipart upload in Task 8b Step 1 detail")
+        def headers = new org.springframework.http.HttpHeaders()
+        headers.setContentType(org.springframework.http.MediaType.MULTIPART_FORM_DATA)
+        String token = currentObxToken()
+        if (token) headers.add('Cookie', "obx_token=${token}")
+        def body = new org.springframework.util.LinkedMultiValueMap<String, Object>()
+        body.add('file', new org.springframework.core.io.ByteArrayResource(fileContents) {
+            @Override String getFilename() { filename }
+        })
+        body.add('name', name)
+        if (documentTypeId) body.add('documentTypeId', documentTypeId)
+        def rest = new org.springframework.web.client.RestTemplate()
+        def resp = rest.exchange(
+            "${baseUrl}/api/documents",
+            org.springframework.http.HttpMethod.POST,
+            new org.springframework.http.HttpEntity<>(body, headers),
+            Map
+        )
+        return resp.body
     }
 
     void delete(String id) {
@@ -1035,7 +1118,7 @@ class DocumentClient {
     }
 }
 ```
-**Note:** the `create()` multipart upload is non-trivial. The implementer chooses between raw `HttpURLConnection` multipart, Apache HttpClient (already a transitive dep via Grails), or Spring `RestTemplate` (already in Grails Spring context). Recommended: Spring RestTemplate; document the choice in the commit.
+**Note:** `create()` uses Spring `RestTemplate` for multipart upload (already in Grails Spring context; zero new dependencies). Decision made during plan-update Round 1 per CIR §3 Forced Decision 1.
 
 - [ ] **Step 2: Wire `DocumentClient` as a Grails Spring bean.**
 Add to `grails-app/conf/spring/resources.groovy`:
@@ -1063,13 +1146,13 @@ Replace `Document.get(params.id)` with `documentClient.fetchById(params.id)`. Up
 Lines 462, 498, 548, 607, 617, 628, 1118, 1122 — same pattern.
 
 - [ ] **Step 8: Migrate `OrderController` (4 sites).**
-Lines 526, 546, 943, 961 — same pattern. Note: line 943 uses `Document.findByName(...)` — add `findByName(String name)` to `DocumentClient` if needed, OR use `findByCode` + filter.
+Lines 526, 546, 943, 961 — same pattern. Note: line 943 uses `Document.findByName(...)` → `documentClient.findByName(...)` (method added to client in Step 1; endpoint added to `DocumentController` in Task 5 Step 1).
 
 - [ ] **Step 9: Migrate `ShipmentController` (4 sites).**
 Lines 816, 820, 835, 926 — same pattern.
 
 - [ ] **Step 10: Migrate `ShipmentWorkflowController:113`.**
-`Document.findAllByDocumentTypeInList(...)` → `documentClient.findByTypeInList(...)` (add method to client if needed). OR adjust: most callers can use `findByCode` instead since `documentTypeInList` is usually code-equivalent.
+`Document.findAllByDocumentTypeInList(...)` → `documentClient.findByTypeIds(...)` (method added to client in Step 1; endpoint added to `DocumentController` in Task 5 Step 1; the caller passes the list of `DocumentType.id` values).
 
 - [ ] **Step 11: Migrate `StockMovementController` (3 sites).**
 Lines 502, 505, 507 — `getNonTemplateDocumentTypes` + `Document.get` + `new Document`.
