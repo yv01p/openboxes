@@ -206,6 +206,13 @@ class FormatTagLib {
                 String className = attrs.obj.getClass().getSimpleName()
                 out << warehouse.message(code: 'enum.' + className + "." + attrs.obj, locale: locale)
             }
+            // handle Map; the .properties accessor below returns Groovy class metaproperties for Maps,
+            // not map keys, so we must read .get("name") directly. Surfaces when JSON-deserialized
+            // payloads (e.g. from DocumentClient) are passed in place of GORM entities.
+            else if (attrs.obj instanceof Map) {
+                String name = attrs.obj.get("name")
+                out << LocalizationUtil.getLocalizedString(name ?: attrs.obj.toString(), locale).encodeAsHTML()
+            }
             // for all other objects, return the localized version of the name
             else {
                 // If there's a 'name' attribute on the object
