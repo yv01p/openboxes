@@ -3,5 +3,18 @@
                    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
                                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.5.xsd">
-    <!-- Task 6 fills this in. Empty for Task 2 bootstrap. -->
+    <!-- ADDITIVE-ONLY until Phase 1 Task 10 deletes Grails Document.groovy.
+         New tables / nullable columns / indexes OK. No renames, drops, or NOT NULL on existing columns.
+         Constraint lifts once grails-app/domain/org/pih/warehouse/core/Document.groovy is gone. -->
+
+    <!-- Relocated from grails-app/migrations/ in chronological order.
+         Each relocated changeset is preCondition-guarded with onFail="MARK_RAN"
+         so document-service Liquibase records the changeset under its new FILENAME
+         (db/changelog/...) without re-executing it against the already-populated schema
+         that Grails Liquibase produced under the old FILENAME (grails-app/migrations/0.X.x/...). -->
+    <include file="db/changelog/changelog-2017-03-06-1953-document-code-shadow.xml"/>
+    <include file="db/changelog/changelog-2018-10-25-1318-configure-shipping-templates.xml"/>
+    <include file="db/changelog/changelog-2021-01-30-1530-alter-table-document-change-file-uri-column-type.xml"/>
+    <include file="db/changelog/changelog-2022-01-03-1524-configure-invoice-templates.xml"/>
+    <include file="db/changelog/changelog-2023-05-22-1800-add-requisition-template-document-type.xml"/>
 </databaseChangeLog>

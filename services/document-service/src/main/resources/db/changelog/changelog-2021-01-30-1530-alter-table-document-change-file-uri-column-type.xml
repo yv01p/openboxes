@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- XSD namespace upgraded from dbchangelog/1.9 to dbchangelog/4.5 during Phase 1 Task 6.
+     1.9 lacks <modifyDataType> (Liquibase 4.x's replacement for the removed <modifyColumn>).
+     Other relocated files (insert/sqlCheck only) keep their original 1.9 namespace. -->
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                                       http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.5.xsd">
+
+  <changeSet author="pmuchowski" id="3001202115300-1">
+    <preConditions onFail="MARK_RAN">
+      <not>
+        <sqlCheck expectedResult="longtext">
+          SELECT LOWER(DATA_TYPE) FROM INFORMATION_SCHEMA.COLUMNS
+          WHERE TABLE_NAME='document' AND COLUMN_NAME='file_uri'
+        </sqlCheck>
+      </not>
+    </preConditions>
+    <!-- Original used <modifyColumn> (Liquibase 3.x). Liquibase 4.27 (Spring Boot)
+         removed that change type; <modifyDataType> is the documented replacement.
+         The precondition above MARK_RANs when file_uri is already longtext, so this
+         body is effectively dead under normal operation; it is kept correct for the
+         pathological case where document-service runs against a schema where
+         document.file_uri has not yet been widened. -->
+    <modifyDataType tableName="document" columnName="file_uri" newDataType="longtext"/>
+  </changeSet>
+</databaseChangeLog>

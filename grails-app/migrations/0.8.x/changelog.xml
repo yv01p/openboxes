@@ -33,7 +33,6 @@
     <include file="0.8.x/changelog-2018-10-04-1438-alter-table-receipt-add-column-status-and-identifier.xml"/>
     <include file="0.8.x/changelog-2018-10-17-1003-add-foreign-key-constraint-requisition-item-recipient.xml"/>
     <include file="0.8.x/changelog-2018-10-17-1001-alter-table-receipt-add-column-is-split-item.xml"/>
-    <include file="0.8.x/changelog-2018-10-25-1318-configure-shipping-templates.xml"/>
     <include file="0.8.x/changelog-2018-11-06-1434-modify-column-receipt-item-quantity-received.xml"/>
     <include file="0.8.x/changelog-2018-11-07-1501-alter-table-picklist-item-add-column-sort-order.xml"/>
     <include file="0.8.x/changelog-2018-11-21-1552-alter-table-requisition-add-column-requisition-template.xml"/>
@@ -96,7 +95,6 @@
     <include file="0.8.x/changelog-2021-01-21-1125-alter-table-product-package-add-column-product-price.xml"/>
     <include file="0.8.x/changelog-2021-01-26-1100-migrate-price-into-product-price.xml"/>
     <include file="0.8.x/changelog-2021-01-29-1221-create-table-preference-type.xml"/>
-    <include file="0.8.x/changelog-2021-01-30-1530-alter-table-document-change-file-uri-column-type.xml"/>
     <include file="0.8.x/changelog-2021-02-02-1300-alter-table-product-supplier-add-column-product-price.xml"/>
     <include file="0.8.x/changelog-2021-02-04-1530-create-table-product-type-supported-activities.xml"/>
     <include file="0.8.x/changelog-2021-02-05-1200-create-table-product-supplier-preference.xml"/>
@@ -141,7 +139,6 @@
     <include file="0.8.x/changelog-2021-11-19-1446-create-table-invoice-document.xml"/>
     <include file="0.8.x/changelog-2021-11-22-1530-rename-outbound-returns-order-type.xml"/>
     <include file="0.8.x/changelog-2021-12-14-1140-add-submit-request-activity.xml"/>
-    <include file="0.8.x/changelog-2022-01-03-1524-configure-invoice-templates.xml"/>
     <include file="0.8.x/changelog-2022-02-14-1200-alter-table-shipment-reference-number-add-foreign-key-constraint.xml"/>
     <include file="0.8.x/changelog-2022-03-01-0850-add-unique-constraint-party-type-code.xml"/>
     <include file="0.8.x/changelog-2022-04-11-1000-alter-table-product-association-add-mutual-association.xml"/>
@@ -158,7 +155,6 @@
     <include file="0.8.x/changelog-2023-02-28-0900-add-product-family-column-to-product.xml" />
     <include file="0.8.x/changelog-2023-04-14-1200-create-table-product-merge-logger.xml" />
     <include file="0.8.x/changelog-2023-05-17-1453-add-quantity-counted-column.xml" />
-    <include file="0.8.x/changelog-2023-05-22-1800-add-requisition-template-document-type.xml" />
     <include file="0.8.x/changelog-2023-09-13-1233-rename-approver-role-to-purchase-approver.xml" />
     <include file="0.8.x/changelog-2023-09-13-1252-add-requisition-approver-role.xml" />
     <include file="0.8.x/changelog-2023-09-13-1300-alter-table-requisition-add-request-approval-improvement.xml" />

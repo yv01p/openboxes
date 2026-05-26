@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                                       http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.5.xsd">
+    <changeSet id="document-code-shadow-2017-03-06" author="phase-1-migration">
+        <preConditions onFail="MARK_RAN">
+            <columnExists tableName="document_type" columnName="document_code"/>
+        </preConditions>
+        <comment>
+            Shadow of changeset -2 from grails-app/migrations/0.7.x/changelog-2017-03-06-1953-add-shipping-document-templates.xml.
+            That file mixes a document_type.document_code addColumn with unrelated location_group + shipment_workflow_document work,
+            so it cannot be relocated to document-service via git mv. document-service marks-ran here instead so future additive
+            migrations on document_type apply cleanly under document-service's Liquibase scope. The original file stays on the
+            Grails side unchanged; Grails Liquibase continues to own it.
+        </comment>
+        <!-- No body: the column already exists per the precondition. -->
+    </changeSet>
+</databaseChangeLog>
