@@ -19,8 +19,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.io.IOException;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
@@ -73,51 +75,72 @@ public class DocumentController {
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
-    // params= exclusions prevent the three discriminator-style GET handlers from
-    // ambiguously matching when callers pass multiple of code/name/typeIds — without
-    // the `!` exclusions, Spring MVC throws IllegalStateException ("Ambiguous handler
-    // methods mapped") and returns 500 instead of a 4xx.
-    @Operation(summary = "List documents by document code")
-    @GetMapping(params = {"code", "!name", "!typeIds"})
-    public List<Document> listByCode(@RequestParam DocumentCode code) {
-        return docService.findByCode(code);
-    }
-
     /**
-     * Single-document lookup by name (scalar semantics — matches Grails' singular
-     * {@code Document.findByName(String)} dynamic finder; OrderController:943 is the
-     * only known caller and expects a single Document).
+     * Unified list/find endpoint. Exactly one discriminator (code, name, typeIds) must be
+     * present; passing zero or multiple yields 400. Consolidated into a single handler so
+     * springdoc emits one OpenAPI operation (springdoc merges multiple Spring MVC handlers
+     * at the same (path, method) into a single operation regardless of {@code params=}
+     * discrimination, which produced misleading "all params required" docs previously).
+     *
+     * <p>Return shape varies by discriminator:
+     * <ul>
+     *   <li>{@code code} → 200 with {@code List<Document>}</li>
+     *   <li>{@code typeIds} → 200 with {@code List<Document>}</li>
+     *   <li>{@code name} → 200 with {@code Document} (first match) or 404</li>
+     * </ul>
+     * Scalar name semantics match Grails {@code Document.findByName(String)} (OrderController:943).
      */
-    @Operation(summary = "Find document by name (first match)")
-    @GetMapping(params = {"name", "!code", "!typeIds"})
-    public ResponseEntity<Document> getByName(@RequestParam String name) {
-        // T3-M1: manual guard rejects empty/blank name with 400 (Spring already 400s on missing).
+    @Operation(
+            summary = "List or find documents (exactly one of code/name/typeIds required)",
+            description = "code or typeIds return a list of matching documents. name returns the "
+                    + "first matching document (404 if none). Passing zero or multiple discriminators returns 400."
+    )
+    @GetMapping
+    public ResponseEntity<?> listOrFind(
+            @RequestParam(required = false) DocumentCode code,
+            @RequestParam(required = false) String name,
+            @RequestParam(required = false) List<String> typeIds) {
+
+        int discriminators = (code != null ? 1 : 0)
+                + (name != null ? 1 : 0)
+                + (typeIds != null ? 1 : 0);
+        if (discriminators != 1) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        if (code != null) {
+            return ResponseEntity.ok(docService.findByCode(code));
+        }
+        if (typeIds != null) {
+            return ResponseEntity.ok(docService.findByTypeIds(typeIds));
+        }
+        // name path: T3-M1 blank guard, then scalar lookup with 404 fallback.
         if (name.isBlank()) {
             return ResponseEntity.badRequest().build();
         }
         return docService.findByName(name)
-                .map(ResponseEntity::ok)
+                .<ResponseEntity<?>>map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
-    }
-
-    @Operation(summary = "List documents whose document_type is in the given set")
-    @GetMapping(params = {"typeIds", "!code", "!name"})
-    public List<Document> listByTypeIds(@RequestParam List<String> typeIds) {
-        return docService.findByTypeIds(typeIds);
     }
 
     @Operation(summary = "Upload document (multipart)")
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public Document create(@RequestParam("file") MultipartFile file,
-                           @RequestParam(value = "name", required = false) String name,
-                           @RequestParam(value = "documentTypeId", required = false) String documentTypeId)
+    public ResponseEntity<Document> create(@RequestParam("file") MultipartFile file,
+                                           @RequestParam(value = "name", required = false) String name,
+                                           @RequestParam(value = "documentTypeId", required = false) String documentTypeId)
             throws IOException {
-        return docService.create(
+        Document saved = docService.create(
                 name != null ? name : file.getOriginalFilename(),
                 file.getOriginalFilename(),
                 file.getContentType(),
                 file.getBytes(),
                 documentTypeId);
+        // 201 Created + Location header per REST convention.
+        URI location = ServletUriComponentsBuilder.fromCurrentRequest()
+                .path("/{id}")
+                .buildAndExpand(saved.getId())
+                .toUri();
+        return ResponseEntity.created(location).body(saved);
     }
 
     @Operation(summary = "Delete document")
