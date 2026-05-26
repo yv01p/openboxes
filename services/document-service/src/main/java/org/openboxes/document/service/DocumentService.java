@@ -5,6 +5,7 @@ import org.openboxes.document.entity.DocumentCode;
 import org.openboxes.document.entity.DocumentType;
 import org.openboxes.document.repository.DocumentRepository;
 import org.openboxes.document.repository.DocumentTypeRepository;
+import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -73,15 +74,15 @@ public class DocumentService {
                 .toList();
     }
 
-    public List<DocumentType> getAllDocumentTypes() {
-        return typeRepo.findAll();
-    }
-
     /**
      * Creates a new Document row. {@code dateCreated} and {@code lastUpdated} are set explicitly
      * because the columns are NOT NULL in the schema and we deliberately do not use Hibernate
      * {@code @CreationTimestamp} / {@code @UpdateTimestamp} (would conflict with Grails-side
      * GORM auto-stamps during coexistence).
+     *
+     * <p>Unlike Grails' silent-drop behavior on unknown {@code documentTypeId} (T4-M3), this
+     * method throws {@link IllegalArgumentException} so the REST controller can surface a 400
+     * to clients rather than silently creating an orphan-type document.
      */
     @Transactional
     public Document create(String name, String filename, String contentType, byte[] fileContents, String documentTypeId) {
@@ -95,13 +96,24 @@ public class DocumentService {
         d.setDateCreated(now);
         d.setLastUpdated(now);
         if (documentTypeId != null) {
-            typeRepo.findById(documentTypeId).ifPresent(d::setDocumentType);
+            DocumentType type = typeRepo.findById(documentTypeId)
+                    .orElseThrow(() -> new IllegalArgumentException("documentTypeId not found: " + documentTypeId));
+            d.setDocumentType(type);
         }
         return docRepo.save(d);
     }
 
+    /**
+     * Deletes a Document by id. Throws {@link EmptyResultDataAccessException} when the row
+     * is missing so the REST surface can map to HTTP 404 (T4-M1). Spring Data JPA 3.x made
+     * {@code deleteById} idempotent (no-op on missing row), so we must check existence
+     * explicitly to preserve the desired 404 semantics.
+     */
     @Transactional
     public void delete(String id) {
+        if (!docRepo.existsById(id)) {
+            throw new EmptyResultDataAccessException("Document not found: " + id, 1);
+        }
         docRepo.deleteById(id);
     }
 }

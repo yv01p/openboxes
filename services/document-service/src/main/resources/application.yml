@@ -4,6 +4,12 @@ server:
 spring:
   application:
     name: document-service
+  servlet:
+    multipart:
+      # Mirrors the Grails-side Document.fileContents constraint (maxSize: 10485760).
+      # Spring Boot default is 1MB, which would reject uploads the Grails surface accepts.
+      max-file-size: 10MB
+      max-request-size: 10MB
   datasource:
     url: ${DATASOURCE_URL:jdbc:mariadb://db:3306/openboxes?serverTimezone=UTC&useSSL=false}
     username: ${DATASOURCE_USERNAME:openboxes}
