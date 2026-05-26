@@ -152,6 +152,28 @@ Each Task is 1:1 with one spec §8 template step (per user's chosen mapping stra
 | 12. Soak | (folded into Task 13) |
 | 13. Tag | Task 13 |
 
+## Deferred follow-ups
+
+Items surfaced during code reviews that were intentionally deferred rather than fixed in-task. Single source of truth for outstanding work so subagents dispatched against later tasks see the backlog. Delete a row when its fix lands. ID convention: `T<task>-<I|M>` (I = Important, M = Minor).
+
+| ID | Sev | Target | Item | Where |
+|---|---|---|---|---|
+| T3-M2 | Minor | Task 4 | Guard `findByDocumentType_IdIn` against null/empty list in service layer (some DBs balk on `IN ()`; Hibernate 6 + MariaDB handles, but explicit guard is portable) | `service/DocumentService.java` (Task 4) |
+| T3-M6 | Minor | Task 4 | Add `@Column(updatable=false)` to `dateCreated` on both entities; ensure service `create()` sets it explicitly (no `@CreationTimestamp` — would conflict with Grails-side GORM auto-stamp) | `entity/Document.java:63`, `entity/DocumentType.java:49` |
+| T3-M1 | Minor | Task 5 | Reject null on `?name=` controller param; raw `findByName(null)` returns all Documents with NULL name (Spring Data translates null to `IS NULL`) | `controller/DocumentController.java` (Task 5) |
+| T2-I3 | Important | Task 6 validation | Empty Liquibase changelog still acquires `DATABASECHANGELOGLOCK` on each restart; validate per-service namespacing (§A17) doesn't collide once real changesets land | `services/document-service/src/main/resources/db/changelog/` |
+| T2-I2 | Important | Task 7 | Drop dev-default JWT secret; fail-fast on missing `OPENBOXES_JWT_SECRET` env var, mirroring `grails-app/services/org/pih/warehouse/auth/JwtService.groovy:23-27` Phase 0 hardening pattern | `services/document-service/src/main/resources/application.yml:21` |
+| T2-M5 | Minor | Task 7 | Restrict actuator endpoint exposure to `/actuator/health` in `SecurityConfig`; never permit-all `/actuator/**` (would leak `/actuator/env` JWT secret value) | `security/SecurityConfig.java` (Task 7) |
+| T2-M2 | Minor | Task 11 hardening | Healthcheck `grep UP` matches `UP` substring anywhere in payload; tighten to `grep '"status":"UP"'`. Affects both `app` and `document-service` for consistency | `docker/docker-compose-base.yml:20,40` |
+| T2-M3 | Minor | Task 11 hardening | Dockerfile runs as root (UID 0); add `RUN useradd -r spring && USER spring` before module is ever exposed beyond a private docker network | `services/document-service/Dockerfile` |
+| T3-I3 | Important | Any time (recommend pre-Task 11) | Pin `TZ=UTC` env on both `app` and `document-service` to prevent latent wall-clock drift between Hibernate 6 (`Instant` → UTC) and Grails Hibernate 5 (`Date` → JVM-default-zone) if ops sets non-UTC timezone | `docker/docker-compose-base.yml` |
+| T2-M4 | Minor | Any time | Add `.dockerignore` to trim `src/`, `.gradle/`, `build/classes`, `build/tmp`, `build/reports` from build context sent to daemon | `services/document-service/.dockerignore` |
+| T2-M1 | Minor | Any time (optional perf) | CI `docker compose up --build` redundantly rebuilds Grails image after `prepareDocker`; could split into `compose build document-service` + `compose up` to skip ~30-60s per run | `.github/workflows/e2e-tests.yml` |
+| T3-M3 | Minor | Any time | Make `@ManyToOne(fetch = FetchType.LAZY, optional = true)` explicit to match Grails `documentType(nullable: true)` constraint and guard against future-dev tightening | `entity/Document.java:81` |
+| T3-M4 | Minor | Any time | Remove explicit `hibernate.dialect: org.hibernate.dialect.MariaDBDialect` — Hibernate 6 auto-detects from JDBC URL; logs `HHH90000025` deprecation warning on every boot | `services/document-service/src/main/resources/application.yml:15` |
+| T3-M5 | Minor | Any time | `@Size(max = 255)` on entity fields only triggers on Bean Validation via `@Valid` DTO binding; either remove (DB enforces via varchar(255)) or document intent | `entity/Document.java`, `entity/DocumentType.java` |
+| T2-M6 | Minor | Phase 2+ | Reconcile `services/` module `0.1.0-SNAPSHOT` versioning vs Grails release cadence once a second service ships | `services/build.gradle:8` |
+
 ## Tasks
 
 ### Task 1: Scope audit + live-smoke-probe (§8 Step 1)
