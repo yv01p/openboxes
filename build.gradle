@@ -459,6 +459,11 @@ dependencies {
     // expose javax.annotation.Nullable, com.google.common.base.Enums, etc.
     compile 'com.google.guava:guava:32.0.1-jre'
 
+    // JWT (Java-8 compatible line; replaces session-only auth incrementally)
+    compile 'io.jsonwebtoken:jjwt-api:0.11.5'
+    runtime 'io.jsonwebtoken:jjwt-impl:0.11.5'
+    runtime 'io.jsonwebtoken:jjwt-jackson:0.11.5'
+
     compile 'com.google.zxing:javase:3.5.1'  // barcode support
 
     testImplementation 'com.icegreen:greenmail:1.6.14'

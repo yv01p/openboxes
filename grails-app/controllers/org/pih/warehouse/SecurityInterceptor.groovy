@@ -10,8 +10,10 @@ package org.pih.warehouse
  **/
 
 import org.pih.warehouse.auth.AuthService
+import org.pih.warehouse.auth.JwtService
 import org.pih.warehouse.core.Location
 import org.pih.warehouse.core.LocationStatus
+import org.pih.warehouse.core.User
 
 class SecurityInterceptor {
 
@@ -22,6 +24,7 @@ class SecurityInterceptor {
     static ArrayList actionsWithLocationNotRequired = ['status', 'test', 'login', 'logout', 'handleLogin', 'signup', 'handleSignup', 'json', 'updateAuthUserLocale', 'viewLogo', 'chooseLocation', 'menu']
 
     def authService
+    def jwtService
 
     public SecurityInterceptor() {
         matchAll().except(uri: '/static/**').except(controller: "errors").except(uri: "/info").except(uri: "/health")
@@ -33,6 +36,28 @@ class SecurityInterceptor {
         authService.currentLocation = null
     }
     boolean before() {
+
+        // Phase 0: accept obx_token JWT cookie alongside JSESSIONID.
+        // Populate session.user/warehouse from JWT claims so existing safety checks
+        // (deactivated-user, missing-user redirect, disabled-location, location-required)
+        // run uniformly for both auth paths. The `!session.user` guard means a fresh
+        // session takes precedence; the JWT path only fills in when the session is
+        // missing/expired (typical case: server-side session TTL < 8h JWT TTL).
+        def tokenCookie = request.cookies?.find { it.name == JwtService.COOKIE_NAME }
+        if (tokenCookie?.value && !session.user) {
+            Map<String, Object> claims = jwtService.validate(tokenCookie.value)
+            if (claims) {
+                User user = User.get((String) claims.get('sub'))
+                if (user) {
+                    session.user = user
+                    session.userName = user.username
+                    if (claims.get('loc')) {
+                        session.warehouse = Location.get((String) claims.get('loc'))
+                    }
+                }
+            }
+        }
+        // Fall through to existing session-based logic — all safety checks run unchanged
 
         // set user/warehouse, if present, or clear them if not
         authService.currentUser = session.user ?: null

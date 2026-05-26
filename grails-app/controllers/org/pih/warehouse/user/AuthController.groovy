@@ -12,6 +12,7 @@ package org.pih.warehouse.user
 import grails.core.GrailsApplication
 import grails.gorm.transactions.Transactional
 import grails.validation.ValidationException
+import org.pih.warehouse.auth.JwtService
 import org.pih.warehouse.auth.UserSignupEvent
 import org.pih.warehouse.core.MailService
 import org.pih.warehouse.core.User
@@ -21,6 +22,7 @@ class AuthController {
     MailService mailService
     def userService
     def authService
+    def jwtService
     GrailsApplication grailsApplication
     def recaptchaService
     def userAgentIdentService
@@ -108,6 +110,9 @@ class AuthController {
                     session.warehouse = userInstance.warehouse
                 }
 
+                String token = jwtService.issue(session.user, session.warehouse)
+                response.setHeader('Set-Cookie', JwtService.buildSetCookieHeader(token))
+
                 if (session?.targetUri) {
                     redirect(uri: session.targetUri)
                     session.targetUri = null
@@ -134,6 +139,7 @@ class AuthController {
      * Allows user to log out of the system
      */
     def logout() {
+        response.setHeader('Set-Cookie', JwtService.buildSetCookieHeader('', true))
         if (session.impersonateUserId) {
             session.user = User.get(session.activeUserId)
             session.impersonateUserId = null

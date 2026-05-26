@@ -15,6 +15,7 @@ import grails.gorm.transactions.Transactional
 import grails.util.Environment
 import org.hibernate.ObjectNotFoundException
 import org.pih.warehouse.LocalizationUtil
+import org.pih.warehouse.auth.JwtService
 import org.pih.warehouse.core.ActivityCode
 import org.pih.warehouse.core.Location
 import org.pih.warehouse.core.RoleType
@@ -33,6 +34,7 @@ class ApiController {
     def userService
     def helpScoutService
     def localizationService
+    def jwtService
     GrailsApplication grailsApplication
     def megamenuService
     def messageSource
@@ -43,9 +45,15 @@ class ApiController {
         def password = request.JSON.password
         if (userService.authenticate(username, password)) {
             session.user = User.findByUsernameOrEmail(username, username)
+            if (!session.user) {
+                render([status: 401, text: "Authentication failed"])
+                return
+            }
             if (request.JSON.location) {
                 session.warehouse = Location.get(request.JSON.location)
             }
+            String token = jwtService.issue(session.user, session.warehouse)
+            response.setHeader('Set-Cookie', JwtService.buildSetCookieHeader(token))
             render([status: 200, text: "Authentication was successful"])
             return
         }
@@ -58,6 +66,8 @@ class ApiController {
             throw new ObjectNotFoundException(params.id, Location.class.toString())
         }
         session.warehouse = location
+        String token = jwtService.issue(session.user, location)
+        response.setHeader('Set-Cookie', JwtService.buildSetCookieHeader(token))
         render([status: 200, text: "User ${session.user} is now logged into ${location.name}"])
     }
 
@@ -246,6 +256,7 @@ class ApiController {
 
 
     def logout() {
+        response.setHeader('Set-Cookie', JwtService.buildSetCookieHeader('', true))
         if (session.impersonateUserId) {
             session.user = User.get(session.activeUserId)
             session.impersonateUserId = null
