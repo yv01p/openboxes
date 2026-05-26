@@ -1,5 +1,6 @@
 package org.openboxes.document.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -29,8 +30,10 @@ public class Document {
     /**
      * Optimistic-locking column maintained by both Grails (Hibernate 5) and
      * this service (Hibernate 6). NOT NULL in the schema; must be mapped or
-     * Hibernate 6 will fail to write rows.
+     * Hibernate 6 will fail to write rows. {@code @JsonIgnore} keeps internal
+     * lock state off the wire — callers shouldn't couple to it.
      */
+    @JsonIgnore
     @Version
     @Column(name = "version", nullable = false)
     private Long version;
@@ -54,8 +57,12 @@ public class Document {
     /**
      * Schema stores file bytes as MEDIUMBLOB (capped at 10 MB per Grails constraint).
      * {@code columnDefinition} is supplied so Hibernate's schema validator does not
-     * complain about LONGBLOB vs MEDIUMBLOB mismatch.
+     * complain about LONGBLOB vs MEDIUMBLOB mismatch. {@code @JsonIgnore} suppresses
+     * the field from JSON responses — callers fetch bytes via
+     * {@code GET /api/documents/{id}/content}; serializing them inline base64-bloats
+     * list responses by 33% per row.
      */
+    @JsonIgnore
     @Lob
     @Column(name = "file_contents", columnDefinition = "mediumblob")
     private byte[] fileContents;

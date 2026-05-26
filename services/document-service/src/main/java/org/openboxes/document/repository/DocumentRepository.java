@@ -10,6 +10,16 @@ import java.util.Optional;
 
 public interface DocumentRepository extends JpaRepository<Document, String> {
 
+    /**
+     * Override the inherited {@code findById} so the {@code documentType} relation is fetched
+     * in the same SELECT. Without this, Jackson serialization of {@code Document} via the REST
+     * surface ships {@code documentType: null} for rows that actually have one (the LAZY proxy
+     * is not initialized at serialization time even with open-in-view).
+     */
+    @EntityGraph(attributePaths = "documentType")
+    @Override
+    Optional<Document> findById(String id);
+
     /** Mirrors Grails {@code Document.findAllByDocumentCode(DocumentCode)} via the join through DocumentType. */
     @EntityGraph(attributePaths = "documentType")
     List<Document> findByDocumentType_DocumentCode(DocumentCode code);

@@ -73,8 +73,12 @@ public class DocumentController {
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
+    // params= exclusions prevent the three discriminator-style GET handlers from
+    // ambiguously matching when callers pass multiple of code/name/typeIds — without
+    // the `!` exclusions, Spring MVC throws IllegalStateException ("Ambiguous handler
+    // methods mapped") and returns 500 instead of a 4xx.
     @Operation(summary = "List documents by document code")
-    @GetMapping(params = "code")
+    @GetMapping(params = {"code", "!name", "!typeIds"})
     public List<Document> listByCode(@RequestParam DocumentCode code) {
         return docService.findByCode(code);
     }
@@ -85,7 +89,7 @@ public class DocumentController {
      * only known caller and expects a single Document).
      */
     @Operation(summary = "Find document by name (first match)")
-    @GetMapping(params = "name")
+    @GetMapping(params = {"name", "!code", "!typeIds"})
     public ResponseEntity<Document> getByName(@RequestParam String name) {
         // T3-M1: manual guard rejects empty/blank name with 400 (Spring already 400s on missing).
         if (name.isBlank()) {
@@ -97,7 +101,7 @@ public class DocumentController {
     }
 
     @Operation(summary = "List documents whose document_type is in the given set")
-    @GetMapping(params = "typeIds")
+    @GetMapping(params = {"typeIds", "!code", "!name"})
     public List<Document> listByTypeIds(@RequestParam List<String> typeIds) {
         return docService.findByTypeIds(typeIds);
     }
