@@ -89,7 +89,7 @@ All endpoints on identity-service, served via nginx at `/api/identity/*`. JSON r
 
 | Method | Path | Request body | Response 200 | Cookie effect | Notes |
 |---|---|---|---|---|---|
-| `POST` | `/api/identity/login` | `{username, password, location?}` | `{user: {id, username, firstName, lastName, email, roles: [ids]}, location: {id, name}\|null}` | Sets `obx_token` HttpOnly SameSite=Strict cookie (8h TTL, `Path=/`) | Accepts username OR email (mirrors current `User.findByUsernameOrEmail`). 401 on bad creds (incl. account-not-found). 403 on `!person.active`. Triggers BCrypt-or-SHA1 verification with auto-migrate (§10). Updates `user.last_login_date` on success. |
+| `POST` | `/api/identity/login` | `{username, password, location?}` | `{user: {id, username, firstName, lastName, email, roles: [ids]}, location: {id, name}\|null}` | Sets `obx_token` HttpOnly SameSite=Strict cookie (8h TTL, `Path=/`) | Accepts username OR email (mirrors current `User.findByUsernameOrEmail`). 401 on bad creds (incl. account-not-found). 403 on `!person.active`. Triggers BCrypt-or-SHA1 verification with auto-migrate (§10). |
 | `POST` | `/api/identity/logout` | `{}` | `{}` | Clears `obx_token` (`Max-Age=0`) | Idempotent (200 even if no cookie). |
 | `PUT` | `/api/identity/chooseLocation/{id}` | `{}` | `{user: {...}, location: {...}, effectiveRoles: [ids]}` | Re-issues `obx_token` with updated `loc` claim and refreshed `roles` (effective roles = global + location-specific). | Requires authenticated cookie. 404 if location not found, 403 if location disabled or user lacks LocationRole for it. **Also updates `user.last_login_date`** (preserves the semantic from Grails `DashboardController.chooseLocation:225` which is removed). |
 | `GET` | `/api/identity/me` | (cookie) | `{user: {...}, location: {...}\|null, effectiveRoles: [ids]}` | (none) | Replaces React's currentUser lookup. effectiveRoles = global user.roles + LocationRoles-for-current-location. 401 on missing/invalid cookie. |
@@ -100,7 +100,7 @@ All endpoints on identity-service, served via nginx at `/api/identity/*`. JSON r
 |---|---|---|---|---|
 | `POST` | `/api/identity/signup` | `{username, password, firstName, lastName, email, phoneNumber?, additionalQuestions?, recaptchaToken?}` | `{user: {id, username, email}}` | Gated by `OPENBOXES_SIGNUP_ENABLED` env (default `false`). Optional ReCAPTCHA validation if `OPENBOXES_SIGNUP_RECAPTCHA_ENABLED=true`. Triggers welcome email. 403 if signup disabled, 400 on password complexity or validation failure, 409 on duplicate username/email. Creates Person + User rows in single JPA transaction; assigns default roles (mirrors `UserService.assignDefaultRoles`). |
 | `POST` | `/api/identity/password/change` | `{currentPassword, newPassword}` | `{}` | **Authenticated self-edit.** Verifies current password (using §10 BCrypt-or-SHA1 verifier). 401 if currentPassword wrong, 400 if newPassword fails complexity rules (§10.2). Stores new password as BCrypt. |
-| `PUT` | `/api/identity/users/{id}/password` | `{newPassword}` | `{}` | **Admin-edit endpoint.** Requires `ROLE_ADMIN` (or `ROLE_SUPERUSER`) in JWT claims. Does NOT require currentPassword. 403 if caller lacks admin role, 404 if user not found, 400 on weak password. Stores new password as BCrypt. |
+| `PUT` | `/api/identity/users/{id}/password` | `{newPassword}` | `{}` | **Admin-edit endpoint.** Caller must hold a role whose `RoleType` is `ROLE_ADMIN` or `ROLE_SUPERUSER`. The JWT `roles` claim carries raw role IDs (Phase 0/1 convention, per A28); identity-service resolves IDs → `RoleType` via an in-memory cache loaded at startup (`SELECT id, role_type FROM role`). Cache refresh trigger (TTL vs. Grails-notified vs. on-cache-miss reload) is a TWP-level decision; staleness is tolerable since role-type changes are admin-rare. Does NOT require currentPassword. 403 if caller lacks admin role, 404 if user not found, 400 on weak password. Stores new password as BCrypt. |
 | `POST` | `/api/identity/password/reset-request` | `{email}` | `{}` | **NEW feature.** Always returns 200 (don't leak whether email exists). If email matches an active user, generates single-use token (random 32-byte URL-safe), inserts row in `password_reset_token` (24h TTL), sends reset-link email. |
 | `POST` | `/api/identity/password/reset/{token}` | `{newPassword}` | `{}` | **NEW feature.** Validates token (exists, not used, not expired). 400 on weak password. Stores new password as BCrypt; marks token used. |
 
@@ -207,7 +207,7 @@ public class LocationRole {
 }
 ```
 
-**RoleType.java** — Java enum mirroring Grails `RoleType`. Values enumerated by reading `grails-app/domain/org/pih/warehouse/core/RoleType.groovy` during port. Stored as VARCHAR(255) via `@Enumerated(EnumType.STRING)`.
+**RoleType.java** — Java enum mirroring Grails `RoleType`. Values enumerated by reading `src/main/groovy/org/pih/warehouse/core/RoleType.groovy` during port. Stored as VARCHAR(255) via `@Enumerated(EnumType.STRING)`.
 
 **PasswordResetToken.java** (NEW entity; identity-service-only ownership):
 
@@ -369,7 +369,7 @@ identity-service `PasswordEncoder` is a `DelegatingPasswordEncoder` with two rec
 1. If storedHash starts with "$2a$" / "$2b$" / "$2y$" (BCrypt format):
    return BCrypt.verify(rawPassword, storedHash)
 2. Else if SHA1Base64(rawPassword) == storedHash:
-   return true; ASYNCHRONOUSLY re-hash to BCrypt and UPDATE user row
+   return true; in a nested `@Transactional(propagation = REQUIRES_NEW)` boundary wrapped in try/catch, re-hash to BCrypt and UPDATE user row
 3. Else:
    return false  (no cleartext fallback — Grails legacy cleartext storage rejected by design)
 ```
@@ -380,7 +380,7 @@ byte[] digest = MessageDigest.getInstance("SHA").digest(rawPassword.getBytes(UTF
 String result = Base64.getEncoder().encodeToString(digest);   // no padding stripping; matches Apache Commons Codec default
 ```
 
-Auto-migrate happens in the same JPA transaction as the login (`@Transactional` boundary on the login service method). If the DB write fails, login still succeeds (verification was true); a WARN log records the migration miss for follow-up.
+Auto-migrate runs synchronously on the same request thread but in a nested `REQUIRES_NEW` transaction, isolated from the outer login transaction. On exception, the catch swallows the error, emits a WARN log recording the migration miss, and returns true — login still succeeds because verification was true. On success, the migrated BCrypt row is durably committed even if the outer login transaction rolls back for an unrelated reason.
 
 Logging: every successful SHA-1 verify emits `INFO: legacy SHA-1 password migrated to BCrypt for userId={id}`. This gives operators a metric for migration progress.
 
@@ -521,6 +521,7 @@ The following load-bearing assumptions were verified empirically against the cod
 | A28 | Grails Spring DI for IdentityClient | ✅ | `grails-app/conf/spring/resources.groovy:23` — `documentClient(org.pih.warehouse.core.DocumentClient)`. New line: `identityClient(org.pih.warehouse.auth.IdentityClient)` |
 | A29 | `response.setHeader('Set-Cookie', ...)` forwarding works | ✅ | Already used at `ApiController.groovy:56,70` and `AuthController.groovy:114,142` to set the JWT cookie locally; shim adapts to forward identity-service's header value instead of building one |
 | A30 | 5-container memory headroom | ✅ (assumed from Phase 1 baseline) | Phase 1 4-container baseline ran stable at ~3GB total; identity-service estimated 500-700MiB (similar to document-service); 5-container target ~3.7GB well within dev-host capacity |
+| A31 | Admin role-type detection from raw-ID JWT claims | ✅ (mechanism chosen) | `JwtService.groovy:39` claim is `user.roles?.collect { it.id }` (raw IDs, no RoleType info). `services/document-service/src/main/java/org/openboxes/document/security/JwtCookieAuthFilter.java:48-52` maps each ID to a `SimpleGrantedAuthority` literally. Identity-service maintains an in-memory `Map<roleId, RoleType>` populated by `SELECT id, role_type FROM role` at startup; admin-endpoint authorization checks `cache.get(claimRoleId) ∈ {ROLE_ADMIN, ROLE_SUPERUSER}`. Refresh strategy deferred to TWP |
 
 ## 14. Known issues / accepted as out of scope
 
