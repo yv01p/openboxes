@@ -36,7 +36,11 @@ class Document implements Serializable {
     // Shipment (and other entities) should create a join table for documents.
     static mapping = {
         id generator: 'uuid'
-        cache true
+        // cache false: document-service (Hibernate 6) co-owns the document table during the
+        // Phase 1 hybrid window. Grails Hibernate L2 cache here would serve stale rows after
+        // out-of-process writes. Lift after Phase X (Document slice decoupling) removes this
+        // domain class entirely. Closes T4-I1.
+        cache false
     }
 
     static transients = ["size", "image", 'link']
