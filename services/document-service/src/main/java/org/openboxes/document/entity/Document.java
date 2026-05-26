@@ -188,4 +188,10 @@ public class Document {
     public void setDocumentType(DocumentType documentType) {
         this.documentType = documentType;
     }
+
+    // Derived getter — not a JPA-mapped property; Jackson serializes it as "size".
+    // Mirrors the Grails-side Document.getSize() transient (declared via transients = ["size", ...]).
+    public Long getSize() {
+        return fileContents != null ? (long) fileContents.length : null;
+    }
 }
