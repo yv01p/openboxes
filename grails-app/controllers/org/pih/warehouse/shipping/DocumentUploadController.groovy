@@ -19,15 +19,25 @@ class DocumentUploadController {
 
     def documentClient
 
+    // The form field name `file` is the contract — DocumentUploadCommand.file binds the
+    // <input name="file" type="file"> from grails-app/views/documentUpload/form.gsp.
     def upload(DocumentUploadCommand command) {
+        // T8b-I5: guard against an empty submission before we hit documentClient. Without this,
+        // command.file?.originalFilename/bytes silently passes nulls down to RestTemplate which
+        // explodes with a confusing NPE instead of a user-visible "no file" message.
+        if (!command.file || command.file.empty) {
+            flash.message = "No file uploaded"
+            redirect(action: 'view', id: command.shipmentId)
+            return
+        }
         def shipment = Shipment.get(command.shipmentId)
         // Upload to document-service; re-attach via proxy id so the shipment_document join
         // (still Grails-managed this slice) records the row.
         Map created = documentClient.create(
-                command.file?.originalFilename,
-                command.file?.originalFilename,
-                command.file?.contentType,
-                command.file?.bytes)
+                command.file.originalFilename,
+                command.file.originalFilename,
+                command.file.contentType,
+                command.file.bytes)
         shipment.addToDocuments(Document.load(created.id))
         redirect(action: 'view', id: command.shipmentId)
     }
