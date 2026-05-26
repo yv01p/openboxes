@@ -1,4 +1,3 @@
-import axios from 'axios';
 import queryString from 'query-string';
 
 import {
@@ -12,7 +11,7 @@ import apiClient from 'utils/apiClient';
 
 export default {
   getProducts: (config) => apiClient.get(PRODUCT_API, config),
-  getInventoryItem: (productId, lotNumber) => axios.get(INVENTORY_ITEM(productId, lotNumber)),
+  getInventoryItem: (productId, lotNumber) => apiClient.get(INVENTORY_ITEM(productId, lotNumber)),
   // TODO: tech debt: Replace by the product api call instead of generic
   getProduct: (id) => apiClient.get(`${GENERIC_API}/product/${id}`),
   getLatestInventoryCountDate: (productIds) => apiClient.get(`${PRODUCT_API}/getLatestInventoryCountDate`, {
