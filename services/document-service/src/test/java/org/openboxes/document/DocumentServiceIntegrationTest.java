@@ -20,12 +20,18 @@ import static org.assertj.core.api.Assertions.assertThat;
  * (Task 11 Option A — TestContainers). The dev compose stack only exposes db:3306 on
  * the internal docker network, not the host, so a "real DB" integration test that runs
  * from {@code ./gradlew test} on the developer's host or in CI needs its own ephemeral
- * DB. {@code @AutoConfigureTestDatabase(replace = NONE)} disables the H2 swap so the
- * Liquibase + Hibernate-validate startup wiring is exercised end-to-end against MariaDB
- * (the same engine prod uses).
+ * DB.
  *
  * <p>{@code mariadb:10.6} pins to the dev compose image (see docker-compose-base.yml's
- * referenced image) so behaviour matches what the Grails side coexists with.
+ * referenced image) so the SQL dialect / driver behaviour matches prod.
+ *
+ * <p><b>What this test actually exercises:</b> Spring context + JPA entity mapping +
+ * transactional create/findById roundtrip against real MariaDB. <b>What it does NOT
+ * exercise:</b> production Liquibase wiring (disabled below — see comment on
+ * {@code spring.liquibase.enabled=false}) or schema validity against the production
+ * changelog. Entity-vs-Liquibase divergence is NOT caught here — covered today only
+ * by the live compose stack's Hibernate validate mode at app boot, which the Playwright
+ * E2E specs exercise transitively. T11-I1 tracks closing that gap.
  */
 @SpringBootTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
