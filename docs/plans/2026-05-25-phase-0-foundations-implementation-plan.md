@@ -435,21 +435,22 @@ test('POST /api/login returns 200 and sets obx_token cookie', async ({ request }
 ```typescript
 import { test, expect } from '@playwright/test';
 
-test('React-hosted route /openboxes/invoice/list is reachable after login', async ({ request }) => {
+test('React-hosted route /openboxes/stockMovement/list is reachable after login', async ({ request }) => {
   const loginRes = await request.post('/api/login', {
     data: {
       username: process.env.E2E_USER || 'admin',
       password: process.env.E2E_PASSWORD || 'password',
-      location: process.env.E2E_LOCATION_ID,
+      location: process.env.E2E_LOCATION_ID || '1',
     },
     headers: { 'Content-Type': 'application/json' },
   });
   expect(loginRes.status()).toBe(200);
-  const navRes = await request.get('/openboxes/invoice/list');
+  const navRes = await request.get('/openboxes/stockMovement/list?direction=INBOUND');
   expect(navRes.status()).toBe(200);
-  expect(navRes.url()).toContain('/invoice/list');  // catches silent redirect to chooseLocation when warehouse unset
+  expect(navRes.url()).toContain('/stockMovement/list');
 });
 ```
+Target `/stockMovement/list` rather than `/invoice/list` because `Main Warehouse` (the default seed location id=1) does not have the activity that gates `InvoiceController`; admin@MainWarehouse is rejected with `/openboxes/errors/handleForbidden`. `StockMovementController.list` is the default post-`chooseLocation` landing for `ROLE_AUTHENTICATED` and renders `/common/react` like all React-hosted routes.
 
 - [ ] **Step 5: Create `e2e/tests/api-auth.spec.ts` — authenticated API call returns 200.**
 ```typescript
@@ -480,11 +481,14 @@ test('GSP /openboxes/admin/index loads after GSP-style login', async ({ request 
       password: process.env.E2E_PASSWORD || 'password',
     },
   });
+  const locationId = process.env.E2E_LOCATION_ID || '1';
+  await request.get(`/openboxes/dashboard/chooseLocation/${locationId}?targetUri=${encodeURIComponent('/openboxes/admin/index')}`);
   const response = await request.get('/openboxes/admin/index');
   expect(response.status()).toBe(200);
-  expect(response.url()).toContain('/admin/index');  // fails loudly if seed admin lacks rememberLastLocation and request was redirected to chooseLocation
+  expect(response.url()).toContain('/admin/index');
 });
 ```
+Seed admin has no `rememberLastLocation`, so a bare `/admin/index` GET after login always redirects to `dashboard/chooseLocation`. The explicit `dashboard/chooseLocation/{id}` call mirrors what a real user does in the GSP location-picker, sets `session.warehouse`, and then the `/admin/index` GET resolves directly.
 
 - [ ] **Step 7: Add CI workflow `.github/workflows/e2e-tests.yml`.**
 ```yaml
@@ -506,7 +510,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Set up JDK 8
+        uses: actions/setup-java@v4
+        with:
+          java-version: 8
+          distribution: temurin
+          cache: gradle
+      - name: Build local image with current source
+        run: |
+          ./gradlew prepareDocker -Dgrails.env=prod --console=plain
+          docker build -t ghcr.io/openboxes/openboxes:latest build/docker/
       - name: Boot docker-compose stack
+        working-directory: docker
         run: |
           docker-compose up -d
           for i in {1..60}; do
@@ -531,15 +546,17 @@ jobs:
         run: npm test
       - name: Tear down
         if: always()
+        working-directory: docker
         run: docker-compose down
 ```
+The `docker-compose-base.yml` `app` service uses `image: ${OB_IMAGE_REPOSITORY-ghcr.io/}openboxes/openboxes:${OB_VERSION:-latest}` with no `build:` directive, so we tag our locally-built image with the same `:latest` ref so compose picks it up. `prepareDocker` is the upstream-blessed task (per `.github/workflows/docker-image.yml`) — it depends on `assemble`, rebundles webpack, and drops `openboxes.war` + `Dockerfile` into `build/docker/`. Java 8 mirrors the upstream image-build workflow.
 
 - [ ] **Step 8: Local run.**
 ```bash
 cd e2e
-E2E_LOCATION_ID=<your-seed-warehouse-id> npm test
+E2E_LOCATION_ID=1 npm test
 ```
-Expect 4 tests, all green. If the seed user differs from `admin`/`password`, also set `E2E_USER` and `E2E_PASSWORD`. Find a valid warehouse ID via `docker exec openboxes-db mysql -u openboxes -popenboxes openboxes -e "SELECT id, name FROM location WHERE active=1 LIMIT 5"`.
+Expect 4 tests, all green. `E2E_LOCATION_ID=1` matches `Main Warehouse` in the default seed and works for the `admin`/`password` seed user. If the seed user differs, also set `E2E_USER` and `E2E_PASSWORD`. Confirm available warehouses with: `docker exec openboxes-db mysql -u openboxes -popenboxes openboxes -e "SELECT id, name FROM location WHERE active=1 LIMIT 5"`.
 
 - [ ] **Step 9: Commit.**
 ```bash
@@ -553,11 +570,23 @@ git commit -m "phase 0: add Playwright E2E harness with baseline tests + CI job"
 - (none — verification + tag only)
 
 - [ ] **Step 1: Full stack smoke.**
+
+Build the local image with current source, retag as `:latest` so `docker-compose` picks it up (no `build:` directive in any compose file), then bounce the stack:
+
 ```bash
-docker-compose down
-docker-compose up -d
+# Build WAR + Dockerfile into build/docker/ (use -x generateGitProperties when running on JDK 11+ locally — the plugin's NormalizeEOLOutputStream is incompatible; CI runs on JDK 8 and does not need this)
+./gradlew prepareDocker -Dgrails.env=prod -x generateGitProperties --console=plain
+
+# Build and retag the local image as the same ref the compose files use
+sudo docker build -t ghcr.io/openboxes/openboxes:latest build/docker/
+
+# Restart the stack (compose files live under docker/)
+cd docker
+sudo docker-compose down
+sudo docker-compose up -d
 for i in {1..30}; do curl -sf http://localhost/openboxes/health && break; sleep 5; done
 ```
+To restore the upstream-published `:latest` image later, run `sudo docker pull ghcr.io/openboxes/openboxes:latest`.
 
 - [ ] **Step 2: Verify done-gate items per spec §7.5.**
   - [ ] `docker-compose up` brings up MariaDB + Grails + nginx (verified by Step 1)

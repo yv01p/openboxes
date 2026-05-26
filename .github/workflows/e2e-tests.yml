@@ -16,7 +16,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Set up JDK 8
+        uses: actions/setup-java@v4
+        with:
+          java-version: 8
+          distribution: temurin
+          cache: gradle
+      - name: Build local image with current source
+        run: |
+          ./gradlew prepareDocker -Dgrails.env=prod --console=plain
+          docker build -t ghcr.io/openboxes/openboxes:latest build/docker/
       - name: Boot docker-compose stack
+        working-directory: docker
         run: |
           docker-compose up -d
           for i in {1..60}; do
@@ -41,4 +52,5 @@ jobs:
         run: npm test
       - name: Tear down
         if: always()
+        working-directory: docker
         run: docker-compose down

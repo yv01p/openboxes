@@ -7,7 +7,9 @@ test('GSP /openboxes/admin/index loads after GSP-style login', async ({ request 
       password: process.env.E2E_PASSWORD || 'password',
     },
   });
+  const locationId = process.env.E2E_LOCATION_ID || '1';
+  await request.get(`/openboxes/dashboard/chooseLocation/${locationId}?targetUri=${encodeURIComponent('/openboxes/admin/index')}`);
   const response = await request.get('/openboxes/admin/index');
   expect(response.status()).toBe(200);
-  expect(response.url()).toContain('/admin/index');  // fails loudly if seed admin lacks rememberLastLocation and request was redirected to chooseLocation
+  expect(response.url()).toContain('/admin/index');
 });
