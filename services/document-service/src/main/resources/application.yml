@@ -25,3 +25,9 @@ spring:
 openboxes:
   jwt:
     secret: ${OPENBOXES_JWT_SECRET}
+
+# Surface JwtCookieAuthFilter's rejection log (T7-M1). DEBUG is fine because the line
+# logs only the exception class name, never the token or claim contents.
+logging:
+  level:
+    org.openboxes.document.security: DEBUG

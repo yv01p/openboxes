@@ -17,7 +17,7 @@ services:
         JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:--Xms1024m -Xmx1024m -XX:+UseParallelGC -Djava.awt.headless=true}
         OPENBOXES_JWT_SECRET: ${OPENBOXES_JWT_SECRET:-dev-secret-only-for-local-please-rotate-in-prod}
       healthcheck:
-        test: "curl --fail --silent localhost:8080/openboxes/health | grep UP || exit 1"
+        test: "curl --fail --silent localhost:8080/openboxes/health | grep '\"status\":\"UP\"' || exit 1"
         interval: 10s
         timeout: 5s
         retries: 5
@@ -36,7 +36,7 @@ services:
         DATASOURCE_PASSWORD: ${DATASOURCE_PASSWORD:-openboxes}
         OPENBOXES_JWT_SECRET: ${OPENBOXES_JWT_SECRET:-dev-secret-only-for-local-please-rotate-in-prod}
       healthcheck:
-        test: "curl --fail --silent localhost:8081/actuator/health | grep UP || exit 1"
+        test: "curl --fail --silent localhost:8081/actuator/health | grep '\"status\":\"UP\"' || exit 1"
         interval: 10s
         timeout: 5s
         retries: 5

@@ -50,8 +50,12 @@ public class JwtCookieAuthFilter extends OncePerRequestFilter {
                                 : roles.stream().map(SimpleGrantedAuthority::new).collect(Collectors.toList());
                         var auth = new UsernamePasswordAuthenticationToken(userId, null, authorities);
                         SecurityContextHolder.getContext().setAuthentication(auth);
-                    } catch (JwtException ignored) {
-                        // invalid token — leave SecurityContext empty; downstream rejects
+                    } catch (JwtException e) {
+                        // invalid token — leave SecurityContext empty; downstream rejects.
+                        // Log only the exception class name; jjwt's messages can include
+                        // token fragments which we never want in logs (T7-M1). `logger` is
+                        // inherited from OncePerRequestFilter; no extra import required.
+                        logger.debug("JWT cookie rejected: " + e.getClass().getSimpleName());
                     }
                     break;
                 }
