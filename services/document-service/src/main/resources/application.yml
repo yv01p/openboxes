@@ -24,4 +24,4 @@ spring:
 
 openboxes:
   jwt:
-    secret: ${OPENBOXES_JWT_SECRET:dev-secret-only-for-local-please-rotate-in-prod}
+    secret: ${OPENBOXES_JWT_SECRET}
