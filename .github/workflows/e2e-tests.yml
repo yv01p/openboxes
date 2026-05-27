@@ -31,9 +31,9 @@ jobs:
           java-version: 21
           distribution: temurin
           cache: gradle
-      - name: Build document-service jar
+      - name: Build identity-service + document-service jars
         working-directory: services
-        run: ./gradlew :document-service:bootJar
+        run: ./gradlew :identity-service:bootJar :document-service:bootJar
       - name: Boot docker compose stack
         working-directory: docker
         run: |
