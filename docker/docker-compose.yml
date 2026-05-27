@@ -21,7 +21,10 @@ services:
         file: docker-compose-base.yml
         service: nginx
       depends_on:
-        - app
+        app:
+          condition: service_healthy
+        document-service:
+          condition: service_healthy
 
     db:
       image: mariadb:10

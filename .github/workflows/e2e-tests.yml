@@ -41,6 +41,7 @@ jobs:
           for i in {1..60}; do
             curl -sf http://localhost/openboxes/health \
               && docker exec openboxes-document-service curl -sf localhost:8081/actuator/health \
+              && [ "$(curl -s -o /dev/null -w '%{http_code}' http://localhost/api/documents)" != "502" ] \
               && break
             sleep 5
           done
@@ -60,6 +61,14 @@ jobs:
           E2E_PASSWORD: password
           E2E_LOCATION_ID: '1'  # CI maintainer: override with a real seed warehouse UUID if '1' is not valid in the test fixture
         run: npm test
+      - name: Diagnostic — dump container state + logs
+        if: always()
+        working-directory: docker
+        run: |
+          docker compose ps
+          echo "---app---" && docker logs openboxes-app 2>&1 | tail -100 || true
+          echo "---document-service---" && docker logs openboxes-document-service 2>&1 | tail -100 || true
+          echo "---nginx---" && docker logs openboxes-nginx 2>&1 | tail -50 || true
       - name: Tear down
         if: always()
         working-directory: docker
