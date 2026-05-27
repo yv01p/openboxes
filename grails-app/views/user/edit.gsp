@@ -138,6 +138,15 @@
                                 <g:hiddenField name="version" value="${userInstance?.version}" />
                                 <table>
                                     <tbody>
+                                        <g:if test="${userInstance?.id == session?.user?.id}">
+                                            <tr class="prop">
+                                                <td valign="top" class="name"><label for="currentPassword"><warehouse:message code="user.currentPassword.label" default="Current Password"/></label></td>
+                                                <td valign="top" class="value">
+                                                    <input type="password" style="display:none"/>
+                                                    <g:passwordField name="currentPassword" value="" class="text" size="40"/>
+                                                </td>
+                                            </tr>
+                                        </g:if>
                                         <tr class="prop">
                                             <td valign="top" class="name">
                                                 <label for="password"><warehouse:message code="user.password.label" /></label>

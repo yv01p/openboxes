@@ -15,6 +15,8 @@ import grails.gorm.transactions.Transactional
 import grails.util.Environment
 import org.hibernate.ObjectNotFoundException
 import org.pih.warehouse.LocalizationUtil
+import org.pih.warehouse.auth.AccountDisabledException
+import org.pih.warehouse.auth.BadCredentialsException
 import org.pih.warehouse.auth.JwtService
 import org.pih.warehouse.core.ActivityCode
 import org.pih.warehouse.core.Location
@@ -35,6 +37,7 @@ class ApiController {
     def helpScoutService
     def localizationService
     def jwtService
+    def identityClient
     GrailsApplication grailsApplication
     def megamenuService
     def messageSource
@@ -43,32 +46,36 @@ class ApiController {
     def login() {
         def username = request.JSON.username
         def password = request.JSON.password
-        if (userService.authenticate(username, password)) {
-            session.user = User.findByUsernameOrEmail(username, username)
-            if (!session.user) {
-                render([status: 401, text: "Authentication failed"])
-                return
-            }
-            if (request.JSON.location) {
-                session.warehouse = Location.get(request.JSON.location)
-            }
-            String token = jwtService.issue(session.user, session.warehouse)
-            response.setHeader('Set-Cookie', JwtService.buildSetCookieHeader(token))
-            render([status: 200, text: "Authentication was successful"])
-            return
+        def locationId = request.JSON.location
+        try {
+            def result = identityClient.login(username, password, locationId)
+            // Populate session for backward compatibility with ~54 session.user readers
+            session.user = User.findByUsernameOrEmail(result.body.user.username, result.body.user.username)
+            if (result.body.location) session.warehouse = Location.get(result.body.location.id)
+            response.setHeader('Set-Cookie', result.setCookieHeader)
+            render([status: 200, contentType: 'application/json', text: (result.body as grails.converters.JSON).toString()])
+        } catch (BadCredentialsException e) {
+            render([status: 401, text: 'Authentication failed'])
+        } catch (AccountDisabledException e) {
+            render([status: 403, text: 'Account disabled'])
         }
-        render([status: 401, text: "Authentication failed"])
     }
 
     def chooseLocation() {
-        Location location = Location.get(params.id)
-        if (!location) {
-            throw new ObjectNotFoundException(params.id, Location.class.toString())
+        def tokenCookie = request.cookies?.find { it.name == 'obx_token' }?.value
+        if (!tokenCookie) { render([status: 401, text: 'No session']); return }
+        try {
+            def result = identityClient.chooseLocation(params.id, tokenCookie)
+            session.warehouse = Location.get(result.body.location.id)
+            response.setHeader('Set-Cookie', result.setCookieHeader)
+            render([status: 200, text: "User ${session.user} is now logged into ${result.body.location.name}"])
+        } catch (org.springframework.web.client.HttpClientErrorException e) {
+            // Spring 4.x compat: nested .NotFound subclass added in Spring 5.0
+            if (e.statusCode == org.springframework.http.HttpStatus.NOT_FOUND) {
+                throw new ObjectNotFoundException(params.id, Location.class.toString())
+            }
+            throw e
         }
-        session.warehouse = location
-        String token = jwtService.issue(session.user, location)
-        response.setHeader('Set-Cookie', JwtService.buildSetCookieHeader(token))
-        render([status: 200, text: "User ${session.user} is now logged into ${location.name}"])
     }
 
     def chooseLocale() {
@@ -256,11 +263,11 @@ class ApiController {
 
 
     def logout() {
-        response.setHeader('Set-Cookie', JwtService.buildSetCookieHeader('', true))
+        def tokenCookie = request.cookies?.find { it.name == 'obx_token' }?.value
+        String clearHeader = tokenCookie ? identityClient.logout(tokenCookie) : 'obx_token=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0'
+        response.setHeader('Set-Cookie', clearHeader)
         if (session.impersonateUserId) {
-            session.user = User.get(session.activeUserId)
-            session.impersonateUserId = null
-            session.activeUserId = null
+            session.user = User.get(session.activeUserId); session.impersonateUserId = null; session.activeUserId = null
             render([status: 200, text: "Logout was successful"])
         } else {
             session.invalidate()

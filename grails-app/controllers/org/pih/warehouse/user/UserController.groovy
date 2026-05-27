@@ -12,6 +12,8 @@ package org.pih.warehouse.user
 import grails.validation.ValidationException
 import org.apache.http.auth.AuthenticationException
 
+import org.pih.warehouse.auth.BadCredentialsException
+import org.pih.warehouse.auth.PasswordTooWeakException
 import org.pih.warehouse.core.LocalizationService
 import org.pih.warehouse.core.Location
 import org.pih.warehouse.core.LocationRole
@@ -36,6 +38,7 @@ class UserController {
     MailService mailService
     def userService
     def locationService
+    def identityClient
     LocalizationService localizationService
     LocationRoleDataService locationRoleDataService
     UserDataService userGormService
@@ -276,26 +279,29 @@ class UserController {
     }
 
     def changePassword() {
+        def tokenCookie = request.cookies?.find { it.name == 'obx_token' }?.value
         User user = userGormService.get(params?.id)
-        if (user) {
-            try {
-                userService.changePassword(user, params?.password, params?.passwordConfirm)
-                flash.message = "${warehouse.message(code: 'default.updated.message', args: [warehouse.message(code: 'user.label'), user.id])}"
-                redirect(action: "edit", id: user.id)
-            } catch (ValidationException e) {
-                // This read function is used to avoid getting lazy initialization exceptions in
-                // rendering the edit page, it is done like in the update function above
-                user = User.read(params.id)
-                user.errors = e.errors
-                render(view: "edit", model: [userInstance: user])
-            } catch (AuthenticationException e) {
-                flash.error = e.message
-                redirect(action: "edit", id: user.id)
-            }
-            return
+        if (!user) {
+            flash.message = "${warehouse.message(code: 'default.not.found.message', args: [warehouse.message(code: 'user.label'), params.id])}"
+            redirect(action: "list"); return
         }
-        flash.message = "${warehouse.message(code: 'default.not.found.message', args: [warehouse.message(code: 'user.label'), params.id])}"
-        redirect(action: "list")
+        try {
+            if (user.id == session.user?.id) {
+                // Self-edit path — requires currentPassword
+                identityClient.changePassword(params?.currentPassword, params?.password, tokenCookie)
+            } else {
+                // Admin-edit path
+                identityClient.changeUserPasswordAsAdmin(user.id, params?.password, tokenCookie)
+            }
+            flash.message = "${warehouse.message(code: 'default.updated.message', args: [warehouse.message(code: 'user.label'), user.id])}"
+            redirect(action: "edit", id: user.id)
+        } catch (BadCredentialsException e) {
+            flash.error = "Current password is incorrect."
+            redirect(action: "edit", id: user.id)
+        } catch (PasswordTooWeakException e) {
+            flash.error = e.message
+            redirect(action: "edit", id: user.id)
+        }
     }
 
     def disableLocalizationMode() {

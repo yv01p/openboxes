@@ -12,7 +12,13 @@ package org.pih.warehouse.user
 import grails.core.GrailsApplication
 import grails.gorm.transactions.Transactional
 import grails.validation.ValidationException
+import org.pih.warehouse.auth.AccountDisabledException
+import org.pih.warehouse.auth.BadCredentialsException
+import org.pih.warehouse.auth.DuplicateUsernameException
+import org.pih.warehouse.auth.InvalidTokenException
 import org.pih.warehouse.auth.JwtService
+import org.pih.warehouse.auth.PasswordTooWeakException
+import org.pih.warehouse.auth.SignupDisabledException
 import org.pih.warehouse.auth.UserSignupEvent
 import org.pih.warehouse.core.MailService
 import org.pih.warehouse.core.User
@@ -23,6 +29,7 @@ class AuthController {
     def userService
     def authService
     def jwtService
+    def identityClient
     GrailsApplication grailsApplication
     def recaptchaService
     def userAgentIdentService
@@ -67,70 +74,26 @@ class AuthController {
      * Performs the authentication logic.
      */
     def handleLogin() {
-        def userInstance = User.findByUsernameOrEmail(params.username, params.username)
-        if (userInstance) {
-
-            // FIXME Handle setting timezone based on configuration
-            TimeZone userTimezone = TimeZone.getTimeZone("America/New_York")
-            // Check for user's preferred timezone
-            if (userInstance.timezone) {
-                userTimezone = TimeZone.getTimeZone(userInstance.timezone)
-            }
-            // If there's no user preference timezone, use the browser timezone (login page sets parameter)
-            else {
-                String browserTimezone = request.getParameter("browserTimezone")
-                if (browserTimezone != null) {
-                    userTimezone = TimeZone.getTimeZone(browserTimezone)
-                }
-            }
-            session.timezone = userTimezone
-
-            // Check if user is active -- redirect back to login page
-            if (!userInstance?.active) {
+        if ("POST".equalsIgnoreCase(request.getMethod())) {
+            try {
+                def result = identityClient.login(params.username, params.password, null)
+                def userInstance = User.findByUsernameOrEmail(params.username, params.username)
+                session.user = userInstance
+                session.userName = userInstance.username
+                if (userInstance?.warehouse && userInstance?.rememberLastLocation) session.warehouse = userInstance.warehouse
+                response.setHeader('Set-Cookie', result.setCookieHeader)
+                if (session?.targetUri) { redirect(uri: session.targetUri); session.targetUri = null; return }
+                redirect(controller: 'dashboard', action: 'index')
+            } catch (BadCredentialsException e) {
+                flash.message = "${warehouse.message(code: 'auth.incorrectPassword.label', args: [params.username])}"
+                def userInstance = new User(username: params['username'])
+                userInstance.errors.rejectValue("version", "default.authentication.failure",
+                    [warehouse.message(code: 'user.label')] as Object[], "${warehouse.message(code: 'auth.unableToAuthenticateUser.message')}")
+                render(view: "login", model: [userInstance: userInstance])
+            } catch (AccountDisabledException e) {
                 flash.message = "${warehouse.message(code: 'auth.accountRequestUnderReview.message')}"
                 redirect(controller: 'auth', action: 'login')
-                return
             }
-
-            // Passwords match
-            // Compare encoded/hashed password as well as in cleartext (support existing cleartext passwords)
-            //if (userInstance.password == params.password.encodeAsPassword() || userInstance.password == params.password) {
-            if (userService.authenticate(params.username, params.password)) {
-                // Need to fetch the manager and roles in order to avoid
-                // Hibernate error ("could not initialize proxy - no Session")
-                // def warehouse = userInstance?.warehouse?.name;
-                // def managerUsername = userInstance?.manager?.username;
-                // def roles = userInstance?.roles;
-
-                session.user = userInstance
-                session.userName = userInstance?.username
-
-                // PIMS-782 Force the user to select a warehouse each time
-                if (userInstance?.warehouse && userInstance?.rememberLastLocation) {
-                    session.warehouse = userInstance.warehouse
-                }
-
-                String token = jwtService.issue(session.user, session.warehouse)
-                response.setHeader('Set-Cookie', JwtService.buildSetCookieHeader(token))
-
-                if (session?.targetUri) {
-                    redirect(uri: session.targetUri)
-                    session.targetUri = null
-                    return
-                }
-
-                redirect(controller: 'dashboard', action: 'index')
-            } else {
-                // Invalid password
-                flash.message = "${warehouse.message(code: 'auth.incorrectPassword.label', args: [params.username])}"
-                userInstance = new User(username: params['username'])
-                userInstance.errors.rejectValue("version", "default.authentication.failure",
-                        [warehouse.message(code: 'user.label', default: 'User')] as Object[], "${warehouse.message(code: 'auth.unableToAuthenticateUser.message')}")
-                render(view: "login", model: [userInstance: userInstance])
-            }
-        } else {
-            flash.message = "${warehouse.message(code: 'auth.userNotFound.message', args: [params.username])}"
-            redirect(action: 'login')
         }
     }
 
@@ -139,17 +102,15 @@ class AuthController {
      * Allows user to log out of the system
      */
     def logout() {
-        response.setHeader('Set-Cookie', JwtService.buildSetCookieHeader('', true))
+        def tokenCookie = request.cookies?.find { it.name == 'obx_token' }?.value
+        String clearHeader = tokenCookie ? identityClient.logout(tokenCookie) : 'obx_token=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0'
+        response.setHeader('Set-Cookie', clearHeader)
         if (session.impersonateUserId) {
-            session.user = User.get(session.activeUserId)
-            session.impersonateUserId = null
-            session.activeUserId = null
-            redirect(controller: "dashboard", action: "index")
+            session.user = User.get(session.activeUserId); session.impersonateUserId = null; session.activeUserId = null
         } else {
-            flash.message = "${warehouse.message(code: 'auth.logoutSuccess.message')}"
             session.invalidate()
-            redirect(action: 'login')
         }
+        redirect(controller: 'auth', action: 'login')
     }
 
 
@@ -176,51 +137,59 @@ class AuthController {
      */
     @Transactional
     def handleSignup() {
-        def userInstance = new User()
         if ("POST".equalsIgnoreCase(request.getMethod())) {
-            userInstance.properties = params
-
-            if (params.password) {
-                userInstance.password = params.password.encodeAsPassword()
-                userInstance.passwordConfirm = params.passwordConfirm.encodeAsPassword()
-            }
-            userInstance.active = Boolean.FALSE
-
-            // Set the email as username for backwards compatibility since we're no longer including username on signup
-            userInstance.username = params.email
-
-            // Verify recaptcha challenge response if recaptcha is enabled
-            Boolean recaptchaEnabled = grailsApplication.config.openboxes.signup.recaptcha.enabled?:false
-            if (recaptchaEnabled && !recaptchaService.validate(params["g-recaptcha-response"])) {
-                userInstance.errors.reject("signup.recaptcha.fail.message",
-                        "Nice try, robot. But your feeble attempt has failed. If you're not a robot we apologize. Please try again.")
-
-                // Send failures to Sentry for auditing purposes
-                def exception = new ValidationException("reCAPTCHA challenge failed", userInstance.errors)
-            }
-
-            // Create account
-            if (!userInstance.hasErrors() && userInstance.save(flush: true)) {
-
-                // Attempt to add default roles to user instance
-                userService.assignDefaultRoles(userInstance)
-
-                // Publish event to trigger email notifications
-                grailsApplication.mainContext.publishEvent(new UserSignupEvent(userInstance, params.additionalQuestions))
-
-            } else {
-                // If there's an error, reset the password to what the user entered and redirect to signup
-                userInstance.password = params.password
-                userInstance.passwordConfirm = params.passwordConfirm
-                render(view: "signup", model: [userInstance: userInstance])
-                return
+            try {
+                def signupData = [
+                    username: params.email,
+                    password: params.password,
+                    firstName: params.firstName,
+                    lastName: params.lastName,
+                    email: params.email,
+                    recaptchaToken: params["g-recaptcha-response"]
+                ]
+                identityClient.signup(signupData)
+                flash.message = "${warehouse.message(code: 'auth.accountRequestSubmitted.message', default: 'Account request submitted; pending activation.')}"
+                redirect(action: 'login')
+            } catch (SignupDisabledException e) {
+                flash.error = "${warehouse.message(code: 'auth.signupDisabled.message', default: 'Signup is currently disabled.')}"
+                redirect(action: 'signup')
+            } catch (DuplicateUsernameException e) {
+                flash.error = "${warehouse.message(code: 'auth.duplicateUsername.message', default: 'Username or email already exists.')}"
+                render(view: 'signup', model: [params: params])
+            } catch (ValidationException e) {
+                flash.error = e.message
+                render(view: 'signup', model: [params: params])
             }
         }
-
-        flash.message = "${warehouse.message(code: 'default.created.message', args: [warehouse.message(code: 'user.label'), userInstance.email])}"
-        redirect(action: "login")
     }
 
+
+    def forgotPassword() {   // GET renders form; POST shims to identity-service
+        if ("POST".equalsIgnoreCase(request.getMethod())) {
+            identityClient.requestPasswordReset(params.email)
+            flash.message = "${warehouse.message(code: 'auth.passwordResetRequestSent.message', default: 'If that email exists, a reset link has been sent.')}"
+            redirect(action: 'login')
+        }
+        // GET: just render forgotPassword.gsp
+    }
+
+    def resetPassword() {   // GET renders form (with token in model); POST shims to identity-service
+        if ("POST".equalsIgnoreCase(request.getMethod())) {
+            try {
+                identityClient.resetPassword(params.token, params.newPassword)
+                flash.message = "${warehouse.message(code: 'auth.passwordResetSuccess.message', default: 'Password reset.')}"
+                redirect(action: 'login')
+            } catch (InvalidTokenException e) {
+                flash.error = "Reset link invalid or expired."
+                redirect(action: 'login')
+            } catch (PasswordTooWeakException e) {
+                flash.error = "Password does not meet complexity requirements."
+                render(view: 'resetPassword', model: [token: params.token])
+            }
+            return
+        }
+        render(view: 'resetPassword', model: [token: params.token])
+    }
 
     def renderAccountCreatedEmail() {
         def userInstance = User.get(params.id)
