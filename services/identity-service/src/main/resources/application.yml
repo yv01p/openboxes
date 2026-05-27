@@ -10,7 +10,7 @@ spring:
     driver-class-name: org.mariadb.jdbc.Driver
   jpa:
     hibernate:
-      ddl-auto: validate   # schema is owned by Liquibase + Grails shadow
+      ddl-auto: none   # Task 3: temporarily none (password_reset_token table doesn't exist yet); Task 4 reverts to validate
     properties:
       hibernate.dialect: org.hibernate.dialect.MariaDBDialect
   liquibase:
