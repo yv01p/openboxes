@@ -214,7 +214,7 @@ databaseChangeLog = {
             column(name: "last_name", value: "Administrator")
             column(name: "last_updated", value: "2010-08-25T00:00")
             column(name: "phone_number")
-            column(name: "active", valueBoolean: "true")
+            column(name: "active", valueNumeric: "1")
         }
     }
 
@@ -377,7 +377,7 @@ databaseChangeLog = {
             column(name: "id", value: "1")
             column(name: "last_login_date")
             column(name: "manager_id")
-            column(name: "password", value: "password")
+            column(name: "password", value: "W6ph5Mm5Pz8GgiULbPgzG37mj9g=")
             column(name: "username", value: "admin")
             column(name: "warehouse_id", value: "1")
             column(name: "photo")
