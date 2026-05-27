@@ -41,6 +41,7 @@ jobs:
           for i in {1..60}; do
             curl -sf http://localhost/openboxes/health \
               && docker exec openboxes-document-service curl -sf localhost:8081/actuator/health \
+              && docker exec openboxes-identity-service curl -sf localhost:8082/actuator/health \
               && [ "$(curl -s -o /dev/null -w '%{http_code}' http://localhost/api/documents)" != "502" ] \
               && break
             sleep 5
@@ -74,6 +75,7 @@ jobs:
           docker compose ps
           echo "---app---" && docker logs openboxes-app 2>&1 | tail -100 || true
           echo "---document-service---" && docker logs openboxes-document-service 2>&1 | tail -100 || true
+          echo "---identity-service---" && docker logs openboxes-identity-service 2>&1 | tail -100 || true
           echo "---nginx---" && docker logs openboxes-nginx 2>&1 | tail -50 || true
       - name: Tear down
         if: always()
