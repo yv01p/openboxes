@@ -41,6 +41,19 @@ public class Person {
     @Column
     private Boolean active;
 
+    @PrePersist
+    void prePersist() {
+        if (id == null) id = java.util.UUID.randomUUID().toString().replace("-", "") + "00";  // 32 hex + "00" → 34 char; Grails uses CHAR(38) with hyphens? Verify against existing data shape
+        Instant now = Instant.now();
+        if (dateCreated == null) dateCreated = now;
+        lastUpdated = now;
+    }
+
+    @PreUpdate
+    void preUpdate() {
+        lastUpdated = Instant.now();
+    }
+
     // Getters and setters
 
     public String getId() {
