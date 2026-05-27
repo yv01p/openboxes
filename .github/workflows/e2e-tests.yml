@@ -25,6 +25,12 @@ jobs:
           cache: gradle
       - name: Build local image with current source
         run: ./gradlew prepareDocker -Dgrails.env=prod --console=plain
+      - name: Set up JDK 21 (for services)
+        uses: actions/setup-java@v5
+        with:
+          java-version: 21
+          distribution: temurin
+          cache: gradle
       - name: Build document-service jar
         working-directory: services
         run: ./gradlew :document-service:bootJar
