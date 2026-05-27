@@ -51,13 +51,13 @@ public class AuthService {
             throw new AccountDisabledException("Account is disabled");
         }
 
-        passwordEncoder.setCurrentUserId(user.getId());
+        OpenboxesPasswordEncoder.setCurrentUserId(user.getId());
         try {
             if (!passwordEncoder.matches(password, user.getPassword())) {
                 throw new BadCredentialsException("Invalid username or password");
             }
         } finally {
-            passwordEncoder.clearCurrentUserId();
+            OpenboxesPasswordEncoder.clearCurrentUserId();
         }
 
         Location location = null;
