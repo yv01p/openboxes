@@ -3,10 +3,13 @@ package org.openboxes.identity.service;
 import org.openboxes.identity.entity.Location;
 import org.openboxes.identity.entity.LocationRole;
 import org.openboxes.identity.entity.Role;
+import org.openboxes.identity.entity.RoleType;
 import org.openboxes.identity.entity.User;
 import org.openboxes.identity.repository.LocationRepository;
 import org.openboxes.identity.repository.UserRepository;
 import org.openboxes.identity.password.OpenboxesPasswordEncoder;
+import org.openboxes.identity.password.PasswordComplexityValidator;
+import org.openboxes.identity.security.RoleTypeCache;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,15 +25,21 @@ public class AuthService {
     private final LocationRepository locationRepository;
     private final OpenboxesPasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final PasswordComplexityValidator validator;
+    private final RoleTypeCache roleTypeCache;
 
     public AuthService(UserRepository userRepository,
                        LocationRepository locationRepository,
                        OpenboxesPasswordEncoder passwordEncoder,
-                       JwtService jwtService) {
+                       JwtService jwtService,
+                       PasswordComplexityValidator validator,
+                       RoleTypeCache roleTypeCache) {
         this.userRepository = userRepository;
         this.locationRepository = locationRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
+        this.validator = validator;
+        this.roleTypeCache = roleTypeCache;
     }
 
     @Transactional
@@ -131,5 +140,40 @@ public class AuthService {
         return Stream.concat(globalRoles, locationRoles)
             .distinct()
             .toList();
+    }
+
+    @Transactional
+    public void changePassword(String userId, String currentPassword, String newPassword) {
+        validator.validate(newPassword);
+
+        User user = userRepository.findById(userId)
+            .orElseThrow(() -> new BadCredentialsException("User not found"));
+
+        OpenboxesPasswordEncoder.setCurrentUserId(user.getId());
+        try {
+            if (!passwordEncoder.matches(currentPassword, user.getPassword())) {
+                throw new BadCredentialsException("Invalid password");
+            }
+        } finally {
+            OpenboxesPasswordEncoder.clearCurrentUserId();
+        }
+
+        user.setPassword(passwordEncoder.encode(newPassword));
+        userRepository.save(user);
+    }
+
+    @Transactional
+    public void adminChangePassword(String callerUserId, List<String> callerRoleIds, String targetUserId, String newPassword) {
+        if (!roleTypeCache.hasAnyType(callerRoleIds, RoleType.ROLE_ADMIN, RoleType.ROLE_SUPERUSER)) {
+            throw new UserAccessDeniedException("Insufficient privileges");
+        }
+
+        validator.validate(newPassword);
+
+        User user = userRepository.findById(targetUserId)
+            .orElseThrow(() -> new BadCredentialsException("User not found"));
+
+        user.setPassword(passwordEncoder.encode(newPassword));
+        userRepository.save(user);
     }
 }
