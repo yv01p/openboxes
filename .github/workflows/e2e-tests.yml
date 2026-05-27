@@ -45,6 +45,12 @@ jobs:
               && break
             sleep 5
           done
+      - name: Apply init-baseline.sql to repair Grails BootStrap admin seed
+        # Grails BootStrap seeds admin with cleartext password + person.active=NULL,
+        # which Phase 2's identity-service OpenboxesPasswordEncoder rejects (cleartext
+        # is intentionally not accepted) and AuthService treats as disabled. T17 review
+        # finding; tracked for proper fix in BootStrap.groovy as a T19 back-port item.
+        run: docker exec -i openboxes-db mariadb -u root -proot openboxes < docker/init-baseline.sql
       - uses: actions/setup-node@v5
         with:
           node-version: '20'
