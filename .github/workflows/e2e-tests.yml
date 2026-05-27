@@ -62,7 +62,7 @@ jobs:
           E2E_LOCATION_ID: '1'  # CI maintainer: override with a real seed warehouse UUID if '1' is not valid in the test fixture
         run: npm test
       - name: Diagnostic — dump container state + logs
-        if: always()
+        if: failure()
         working-directory: docker
         run: |
           docker compose ps
