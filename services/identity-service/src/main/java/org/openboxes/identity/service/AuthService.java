@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 @Service
@@ -37,7 +38,7 @@ public class AuthService {
         User user = userRepository.findByUsernameOrEmail(username)
             .orElseThrow(() -> new BadCredentialsException("Invalid username or password"));
 
-        if (Boolean.FALSE.equals(user.getActive())) {
+        if (!Boolean.TRUE.equals(user.getActive())) {
             throw new AccountDisabledException("Account is disabled");
         }
 
@@ -50,9 +51,6 @@ public class AuthService {
             passwordEncoder.clearCurrentUserId();
         }
 
-        user.setLastLoginDate(Instant.now());
-        userRepository.save(user);
-
         Location location = null;
         if (locationId != null) {
             location = locationRepository.findById(locationId).orElse(null);
@@ -61,7 +59,7 @@ public class AuthService {
             }
         }
 
-        List<String> roleIds = computeEffectiveRoles(user, locationId);
+        List<String> roleIds = user.getRoles().stream().map(Role::getId).collect(Collectors.toList());
         String token = jwtService.issue(user, locationId, roleIds);
 
         return new LoginResult(user, location, roleIds, token);
@@ -90,6 +88,9 @@ public class AuthService {
             throw new UserAccessDeniedException("User does not have access to this location");
         }
 
+        user.setLastLoginDate(Instant.now());
+        userRepository.save(user);
+
         List<String> roleIds = computeEffectiveRoles(user, locationId);
         String token = jwtService.issue(user, locationId, roleIds);
 
@@ -108,9 +109,6 @@ public class AuthService {
         Location location = null;
         if (locationId != null) {
             location = locationRepository.findById(locationId).orElse(null);
-            if (location != null && Boolean.FALSE.equals(location.getActive())) {
-                location = null;
-            }
         }
 
         List<String> roleIds = computeEffectiveRoles(user, locationId);

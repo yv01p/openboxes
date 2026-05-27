@@ -36,7 +36,7 @@ public class AuthController {
 
     @PostMapping("/logout")
     public ResponseEntity<Void> logout() {
-        String cookie = cookieService.build(null, true);
+        String cookie = cookieService.build("", true);
         return ResponseEntity.ok()
             .header(HttpHeaders.SET_COOKIE, cookie)
             .build();
