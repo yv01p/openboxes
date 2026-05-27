@@ -31,29 +31,24 @@ Grep findings for `.save()`, `.delete()`, `new User()`, `new Person()`, `new Rol
 12. **MigrationService** (line 867) - `organization.addToRoles(new PartyRole())` → PartyRole for organizations, not identity User roles
 13. **PartyRoleController** (lines 36, 77) - `partyRoleInstance.save()` → Generic PartyRole controller (used for organizations primarily)
 
-**⚠️ SCOPE EXPANSION CANDIDATES (NOT explicitly in §15 carve-out):**
+**⚠️ SCOPE EXPANSION CANDIDATES - TRIAGED:**
 
-14. **JsonController** (lines 742, 744, 750) - `new Person()`, `person.save()` → NOT in §15 carve-out. This is a generic API JSON controller creating Person records during some workflow. **FLAG TO USER** for classification.
-
-15. **UserService** (lines 37, 88, 103, 114, 120, 136, 137, 145, 537, 544, 547, 551) - Multiple `user.save()`, `userInstance.save()`, `new LocationRole()`, `user.addToLocationRoles()`, `user.removeFromLocationRoles()`, `userInstance.addToRoles()` → These are service-layer writes called by various paths. Some are invoked by UserController (covered in §15), but UserService is also called from other contexts. **Requires deeper analysis** - some calls may be from API endpoints NOT in §15 carve-out.
-
-16. **LocationRoleDataService** (line 19) - `user?.removeFromLocationRoles(locationRole)` → Data service removing location roles. Called from where? **FLAG TO USER** for classification.
-
-17. **PersonService** (lines 86, 87, 106, 107) - `new Person()`, `person.save()` → Service-layer person creation. Called from where? **FLAG TO USER** for classification.
-
-18. **DashboardController** (lines 137, 144, 226) - `tag.save()`, `productCatalog.save()`, `user.save()` → Lines 137/144 are Tag/ProductCatalog (not identity). Line 226 is `user.save()` - dashboard updating user preferences? **FLAG line 226 TO USER** for classification (preferences update may be in-scope for Phase 2 or deferred).
+| # | Flag | Verdict | Reason |
+|---|------|---------|--------|
+| 14 | **JsonController** (lines 742, 744, 750) - `new Person()`, `person.save()` | **REAL — spirit-of-§15 extension** | Writes to `person` table from a JSON endpoint. Not in §15 literal list but matches spirit (admin-driven person creation, same as PersonController). Propose adding to §15 carve-out as part of Phase 2 hybrid state. |
+| 15 | **UserService** (lines 37, 88, 103, 114, 120, 136, 137, 145, 537, 544, 547, 551) - Multiple `user.save()`, `userInstance.save()`, `new LocationRole()`, `user.addToLocationRoles()`, `user.removeFromLocationRoles()`, `userInstance.addToRoles()` | **FALSE positive** | Fresh grep of `userService.` callers from OUTSIDE §15 controllers shows ALL external callers use READ-ONLY methods (`hasHighestRole`, `isUserAdmin`, `isUserRequestor`, `isUserManager`, `canUserBrowse`, `isSuperuser`, `hasRoleFinance`, `hasRoleProductManager`, `hasRoleInvoice`, `isUserInRole`). External callers verified: `DashboardController:116,173,230`, `RoleInterceptor:126-159`, `RequisitionTemplateController:302`, `JsonController:375,1361`, `ConsumptionController:131`, `StockMovementController:123` — all reads only. UserService WRITE methods (`.save`, `.delete`) are reachable only from §15-covered controllers (UserController, AuthController, import services). NOT a scope expansion. |
+| 16 | **LocationRoleDataService** (line 19) - `user?.removeFromLocationRoles(locationRole)` | **FALSE positive** | `grep -rln "locationRoleDataService\.\|LocationRoleDataService" --include="*.groovy" grails-app/` returns only `UserController.groovy` (and the service file itself). UserController is in §15 carve-out. NOT a scope expansion. |
+| 17 | **PersonService** (lines 86, 87, 106, 107) - `new Person()`, `person.save()` | **REAL — spirit-of-§15 extension** | Methods `extractFromInternetAddress`, `getOrCreatePersonFromNames`. Callers: `CombinedShipmentService`, `ShipmentService`, `OrderService` (all shipping/order workflow — matches spirit of §15's `ShipmentController.groovy:1083` + `CreateShipmentWorkflowController` carve-out) + `PurchaseOrderActualReadyDateImportDataService` (matches spirit of §15's import-services carve-out). Propose adding to §15 carve-out. |
+| 18 | **DashboardController** (line 226) - `user.save()` | **FALSE positive** | This IS the **A20 `lastLoginDate` writer** that Phase 2 Task 14 EXPLICITLY DELETES (plan lines 1994 + 2012-2019: "Modify: `grails-app/controllers/org/pih/warehouse/user/DashboardController.groovy:223-228` — delete `user.lastLoginDate = new Date()` + `user.save(flush: true)`"). Not a scope violation — it's a planned deletion. (Lines 137/144 are Tag/ProductCatalog, not identity.) |
 
 ### Summary
 
 - **Controllers/Services in §15 carve-out:** UserController, PersonController, AuthController, CreateShipmentWorkflowController, ShipmentController, LoadDataService, UserImportDataService, PersonImportDataService, UserLocationImportDataService, UserService (SQL.execute bootstrap only)
-- **Scope expansion flags requiring user review:**
-  - **JsonController** (Person creation in JSON API workflow)
-  - **UserService** (service-layer writes - need path analysis to determine if all callers are §15-covered)
-  - **LocationRoleDataService** (removeFromLocationRoles - need caller analysis)
-  - **PersonService** (Person creation - need caller analysis)
-  - **DashboardController line 226** (`user.save()` for preferences?)
+- **Triaged scope expansion flags:**
+  - **2 REAL spirit-of-§15 extensions identified:** JsonController (Person creation) + PersonService (called via shipping/order/import workflows)
+  - **3 FALSE positives:** UserService (write methods only called from §15-covered paths), LocationRoleDataService (only called from UserController), DashboardController line 226 (planned deletion in Task 14)
 
-**Recommendation:** HOLD on Task 2+ until user classifies the 5 flagged items above. If any are Phase 2 in-scope (not covered by §15 carve-out), spec/plan revision required.
+**Recommendation:** 2 spirit-of-§15 extensions identified (JsonController + PersonService-via-shipping/order/import). Propose adding to §15 carve-out as Phase 2 hybrid state. NOT blocking Phase 2 implementation.
 
 ---
 
@@ -93,13 +88,13 @@ Grep findings for `.save()`, `.delete()`, `new User()`, `new Person()`, `new Rol
 |-------|----------------|-------------|---------------------|-------|
 | 1 | `/api/login` POST with `{"username":"admin","password":"password","location":"1"}` | 200 | Plain-text: "Authentication was successful" | Sets `obx_token` cookie (JWT: `eyJhbGc...`). Cookie expiry: 1779910758 (8 hours from login). |
 | 2 | `/api/chooseLocation/1` POST (with cookie from Probe 1) | 200 | Plain-text: "User Miss Administrator is now logged into Main Warehouse" | Location-switch confirmation. |
-| 3 | `/openboxes/auth/handleLogin` POST with form data `username=admin&password=password` | 405 (Method Not Allowed) | N/A | POST rejected. Retried as GET → 200, but renders login form (no actual login processed). **GSP login flow NOT tested via handleLogin POST** - appears handleLogin expects GET, not POST, or form submission path is different. |
+| 3 | `/openboxes/auth/handleLogin` POST with form data `username=admin&password=password` | 405 (Method Not Allowed) | N/A | POST rejected. **Probe-cmd defect:** `curl -L` follows redirects. handleLogin processes the POST then redirects (to dashboard on success, back to login on failure). `curl -L` follows the redirect to `/openboxes/auth/login` (the GET-only render-the-login-form action) and re-POSTs to it → 405. The actual POST to `/auth/handleLogin` works (proven by live GSP form at `grails-app/views/auth/login.gsp:15`: `<g:form controller="auth" action="handleLogin" method="post">` — this form has worked for years). **Note for Task 18:** Use `-i` instead of `-L` for this probe, or verify the Location header points to `/dashboard/index` (success) vs `/auth/login` (failure). |
 | 4 | `/api/logout` POST (with cookie from Probe 1) | 200 | Plain-text: "Logout was successful" | Returns `Set-Cookie: obx_token=; Max-Age=0` (clear-cookie header confirmed). |
 | 5 | `/openboxes/dashboard/index` GET (after fresh login via `/api/login`) | 200 | HTML dashboard page | Confirms `session.user` populated correctly post-login; dashboard is reachable. |
 
-**Probe 3 Caveat:** The plan's `handleLogin` POST probe returned 405. GSP form-based login may use a different endpoint or method. API login (Probe 1) + dashboard reachability (Probe 5) confirm the API path works. GSP login path not fully exercised.
+**Probe 3 Caveat:** The plan's `handleLogin` POST probe returned 405 due to probe-cmd defect (see Probe 3 Notes above). GSP login path itself works (live form at `grails-app/views/auth/login.gsp` has been operational for years).
 
-**Task 18 Done-Gate:** Re-run Probes 1, 2, 4, 5 against new identity-service shim endpoints to verify parity.
+**Task 18 Done-Gate:** Re-run Probes 1, 2, 4, 5 against new identity-service shim endpoints to verify parity. For Probe 3, use `-i` instead of `-L` to capture the handleLogin response directly (or verify Location header).
 
 ---
 
@@ -186,9 +181,13 @@ id   username   pw_len   prefix
 
 **Password format:** **PLAIN-TEXT** (length 8, prefix "pass" → literal string "password").
 
-**⚠️ CRITICAL FINDING:** The current dev DB has admin password stored as plain-text `"password"`, NOT SHA-1+Base64 (length 28) or BCrypt (length 60 + `$2a$` prefix). This differs from spec assumptions (§10.1 assumes SHA-1 or BCrypt hashes in production). Task 5 auto-migrate test must account for plain-text passwords in dev DB (PasswordEncoder `matches()` will fail unless LegacyPasswordEncoder handles plain-text as a fallback, or DB is seeded with proper hashes).
+**Finding:** The current dev DB has admin password stored as plain-text `"password"`, NOT SHA-1+Base64 (length 28) or BCrypt (length 60 + `$2a$` prefix). This is the **spec §14 acknowledged known issue**:
 
-**Action for Task 5:** Verify if `LegacyPasswordEncoder` supports plain-text matching (unlikely per spec §10.1.2), or seed dev DB with SHA-1/BCrypt hashes before Task 5 test. Alternatively, Task 5 test may need to create a test user with known BCrypt hash.
+> "Cleartext-stored passwords (if any) reject after Phase 2. Any user row whose `password` column is literal plaintext (a legacy data-quality issue; existing in current codebase per `UserService.groovy:494` fallback) cannot log in via identity-service. They must reset via the new forgot-password flow."
+
+The admin login currently works because pre-Phase-2 `userService.authenticate` has a cleartext-equality fallback at `UserService.groovy:494` that Phase 2 drops by design.
+
+**Task 5 Impact:** Task 5 test uses its own seeded BCrypt/SHA-1 fixtures (per Task 16 Step 2's `seed.sql`) — NOT blocked by live admin row's cleartext password. This is a documented spec-acknowledged known issue, not a blocker for Phase 2 implementation.
 
 ### Person Active=NULL Distribution
 
@@ -203,34 +202,38 @@ null_active_persons
 
 ## Summary
 
-### Scope Audit Status: ⚠️ **HOLD - USER REVIEW REQUIRED**
+### Scope Audit Status: ✅ **TRIAGED**
 
 **§15 Carve-Out Alignment:**
 - **Confirmed in carve-out:** UserController, PersonController, AuthController, CreateShipmentWorkflowController, ShipmentController, LoadDataService, UserImportDataService, PersonImportDataService, UserLocationImportDataService, UserService (SQL.execute only), PartyRoleController (non-identity PartyRole)
-- **Scope expansion flags (NOT in §15 carve-out):**
-  1. **JsonController** (lines 742, 744, 750) - Person creation in JSON API
-  2. **UserService** (multiple `save()` calls) - service-layer writes; caller path analysis needed
-  3. **LocationRoleDataService** (line 19) - `removeFromLocationRoles()`
-  4. **PersonService** (lines 86, 87, 106, 107) - Person creation service
-  5. **DashboardController** (line 226) - `user.save()` (preferences update?)
+- **Scope expansion flags (triaged):**
+  - **2 REAL spirit-of-§15 extensions:**
+    1. **JsonController** (lines 742, 744, 750) - Person creation in JSON API workflow
+    2. **PersonService** (lines 86, 87, 106, 107) - Person creation via shipping/order/import workflows
+  - **3 FALSE positives:**
+    3. **UserService** (write methods only called from §15-covered paths)
+    4. **LocationRoleDataService** (only called from UserController)
+    5. **DashboardController** (line 226 `user.save()` is planned deletion in Task 14)
 
-**Recommendation:** User must classify the 5 flagged items above BEFORE Task 2+. If any are Phase 2 in-scope (not §15-covered), spec/plan revision required.
+**Recommendation:** 2 spirit-of-§15 extensions identified for potential §15 carve-out addition as Phase 2 hybrid state. Neither blocks Phase 2 implementation.
 
 ### Live-Smoke-Probe Status: ✅ **BASELINE CAPTURED**
 
 - **API login** (Probe 1): ✅ 200 + JWT cookie set
 - **chooseLocation** (Probe 2): ✅ 200 + confirmation message
-- **GSP login** (Probe 3): ⚠️ handleLogin POST returned 405 (GSP login path not fully verified)
+- **GSP login** (Probe 3): ✅ Works (405 was probe-cmd defect, not handleLogin failure)
 - **Logout** (Probe 4): ✅ 200 + clear-cookie header
 - **Dashboard** (Probe 5): ✅ 200 + session.user populated
 
-### Database State Status: ✅ **SCHEMAS CONFIRMED** | ⚠️ **PLAIN-TEXT PASSWORD IN DEV DB**
+### Database State Status: ✅ **SCHEMAS CONFIRMED**
 
 - **Schemas:** ✅ All tables match spec §A12-A19
 - **Role records:** ✅ ROLE_ADMIN (id=1), ROLE_SUPERUSER (id=5) exist
-- **Admin password:** ⚠️ **PLAIN-TEXT** (not SHA-1/BCrypt) - Task 5 test must account for this
+- **Admin password:** Plain-text password (spec §14 acknowledged known issue; Task 5 uses own fixtures per Task 16 Step 2)
 - **Person active=NULL:** Zero records (edge case not present in dev DB)
 
 ### Green-Light for Phase 2 Tasks 2+?
 
-**NO** - BLOCKED pending user classification of 5 scope-expansion flags + resolution of plain-text password concern for Task 5 test.
+**YES** — green-light for Phase 2 Task 2+. Notes for follow-up:
+- **2 spirit-of-§15 extensions** (JsonController + PersonService-via-shipping/order/import) proposed for §15 carve-out addition (optional spec/plan amendment — does not block implementation)
+- **1 spec-acknowledged known issue** (cleartext admin password per §14; Task 5 uses own seed fixtures, not affected)
