@@ -3,7 +3,9 @@ package org.openboxes.identity;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.openboxes.identity.entity.PasswordResetToken;
 import org.openboxes.identity.entity.User;
 import org.openboxes.identity.repository.PasswordResetTokenRepository;
@@ -33,7 +35,8 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -103,6 +106,11 @@ class IdentityServiceIntegrationTest {
     @PersistenceContext EntityManager em;
 
     @MockBean JavaMailSender mailSender;
+
+    @BeforeEach
+    void resetMocks() {
+        reset(mailSender);
+    }
 
     // ---------- login ----------
 
@@ -212,7 +220,9 @@ class IdentityServiceIntegrationTest {
                     "recaptchaToken", ""))))
             .andExpect(status().is(200));
         assertThat(userRepository.findByUsername("newsignup")).isPresent();
-        verify(mailSender, atLeastOnce()).send(any(SimpleMailMessage.class));
+        ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender, times(1)).send(captor.capture());
+        assertThat(captor.getValue().getTo()).contains("newsignup@example.com");
     }
 
     @Test
