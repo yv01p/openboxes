@@ -28,25 +28,25 @@ public class SignupService {
     private final PasswordComplexityValidator passwordComplexityValidator;
     private final RecaptchaService recaptchaService;
     private final EmailService emailService;
-
-    @Value("${openboxes.signup.enabled:false}")
-    private boolean signupEnabled;
-
-    @Value("${openboxes.signup.default-roles:ROLE_BROWSER}")
-    private String defaultRoles;
+    private final boolean signupEnabled;
+    private final String defaultRoles;
 
     public SignupService(UserRepository userRepository,
                          RoleRepository roleRepository,
                          OpenboxesPasswordEncoder passwordEncoder,
                          PasswordComplexityValidator passwordComplexityValidator,
                          RecaptchaService recaptchaService,
-                         EmailService emailService) {
+                         EmailService emailService,
+                         @Value("${openboxes.signup.enabled:false}") boolean signupEnabled,
+                         @Value("${openboxes.signup.default-roles:ROLE_BROWSER}") String defaultRoles) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.passwordEncoder = passwordEncoder;
         this.passwordComplexityValidator = passwordComplexityValidator;
         this.recaptchaService = recaptchaService;
         this.emailService = emailService;
+        this.signupEnabled = signupEnabled;
+        this.defaultRoles = defaultRoles;
     }
 
     @Transactional
@@ -56,9 +56,11 @@ public class SignupService {
             throw new SignupDisabledException("Signup is currently disabled");
         }
 
-        if (!recaptchaService.verifyToken(recaptchaToken)) {
+        if (!recaptchaService.validate(recaptchaToken)) {
             throw new RecaptchaException("Invalid reCAPTCHA token");
         }
+
+        passwordComplexityValidator.validate(password);
 
         if (userRepository.findByUsername(username).isPresent()) {
             throw new DuplicateUsernameException("Username already exists");
@@ -67,8 +69,6 @@ public class SignupService {
         if (userRepository.findByEmail(email).isPresent()) {
             throw new DuplicateEmailException("Email already registered");
         }
-
-        passwordComplexityValidator.validate(password);
 
         User u = new User();
         u.setUsername(username);
@@ -86,8 +86,8 @@ public class SignupService {
                     try {
                         RoleType roleType = RoleType.valueOf(roleTypeName);
                         roleRepository.findByRoleType(roleType).ifPresent(roles::add);
-                    } catch (IllegalArgumentException e) {
-                        log.warn("Unknown role type: {}", roleTypeName);
+                    } catch (IllegalArgumentException ignored) {
+                        // unknown RoleType in config — skip
                     }
                 });
 
@@ -98,10 +98,12 @@ public class SignupService {
 
         User saved = userRepository.save(u);
 
-        try {
-            emailService.sendWelcomeEmail(saved.getEmail(), saved.getUsername());
-        } catch (Exception e) {
-            log.error("Failed to send welcome email to {}", saved.getEmail(), e);
+        if (saved.getEmail() != null) {
+            try {
+                emailService.sendWelcomeEmail(saved.getEmail(), saved.getUsername());
+            } catch (Exception e) {
+                log.error("Failed to send welcome email to {}", saved.getEmail(), e);
+            }
         }
 
         return saved;

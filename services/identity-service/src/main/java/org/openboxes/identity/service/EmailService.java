@@ -9,35 +9,28 @@ import org.springframework.stereotype.Service;
 public class EmailService {
 
     private final JavaMailSender mailSender;
+    private final String from;
 
-    @Value("${openboxes.mail.from}")
-    private String fromAddress;
-
-    public EmailService(JavaMailSender mailSender) {
+    public EmailService(JavaMailSender mailSender, @Value("${openboxes.mail.from}") String from) {
         this.mailSender = mailSender;
+        this.from = from;
     }
 
     public void sendWelcomeEmail(String to, String username) {
         SimpleMailMessage message = new SimpleMailMessage();
-        message.setFrom(fromAddress);
+        message.setFrom(from);
         message.setTo(to);
         message.setSubject("Welcome to OpenBoxes");
-        message.setText(String.format(
-            "Hello %s,\n\nWelcome to OpenBoxes! Your account has been successfully created.\n\nBest regards,\nThe OpenBoxes Team",
-            username
-        ));
+        message.setText("Hi " + username + ",\n\nYour account has been created and is pending activation.\n\n— OpenBoxes");
         mailSender.send(message);
     }
 
     public void sendPasswordResetEmail(String to, String resetLink) {
         SimpleMailMessage message = new SimpleMailMessage();
-        message.setFrom(fromAddress);
+        message.setFrom(from);
         message.setTo(to);
-        message.setSubject("Reset Your OpenBoxes Password");
-        message.setText(String.format(
-            "Hello,\n\nYou requested a password reset. Click the link below to reset your password:\n\n%s\n\nIf you did not request this, please ignore this email.\n\nBest regards,\nThe OpenBoxes Team",
-            resetLink
-        ));
+        message.setSubject("OpenBoxes password reset");
+        message.setText("To reset your password, follow this link (valid 24 hours):\n\n" + resetLink + "\n\n— OpenBoxes");
         mailSender.send(message);
     }
 }

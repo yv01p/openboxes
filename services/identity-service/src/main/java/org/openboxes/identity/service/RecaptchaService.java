@@ -11,24 +11,25 @@ public class RecaptchaService {
 
     private static final String RECAPTCHA_VERIFY_URL = "https://www.google.com/recaptcha/api/siteverify?secret={s}&response={t}";
 
-    @Value("${openboxes.signup.recaptcha.enabled:false}")
-    private boolean recaptchaEnabled;
+    private final boolean enabled;
+    private final String secret;
+    private final RestClient http = RestClient.create();
 
-    @Value("${openboxes.signup.recaptcha.secret:}")
-    private String recaptchaSecret;
-
-    private final RestClient restClient;
-
-    public RecaptchaService() {
-        this.restClient = RestClient.create();
+    public RecaptchaService(@Value("${openboxes.signup.recaptcha.enabled:false}") boolean enabled,
+                            @Value("${openboxes.signup.recaptcha.secret:}") String secret) {
+        this.enabled = enabled;
+        this.secret = secret;
     }
 
-    public boolean verifyToken(String token) {
-        if (!recaptchaEnabled) {
+    public boolean validate(String token) {
+        if (!enabled) {
             return true;
         }
-        Map<String, Object> response = restClient.post()
-                .uri(RECAPTCHA_VERIFY_URL, recaptchaSecret, token)
+        if (token == null || token.isBlank()) {
+            return false;
+        }
+        Map<String, Object> response = http.post()
+                .uri(RECAPTCHA_VERIFY_URL, secret, token)
                 .retrieve()
                 .body(Map.class);
         return Boolean.TRUE.equals(response.get("success"));
