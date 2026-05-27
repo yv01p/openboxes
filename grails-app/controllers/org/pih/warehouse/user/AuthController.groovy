@@ -79,6 +79,7 @@ class AuthController {
                 def userInstance = User.findByUsernameOrEmail(params.username, params.username)
                 session.user = userInstance
                 session.userName = userInstance.username
+                session.timezone = userInstance?.timezone
                 if (userInstance?.warehouse && userInstance?.rememberLastLocation) session.warehouse = userInstance.warehouse
                 response.setHeader('Set-Cookie', result.setCookieHeader)
                 if (session?.targetUri) { redirect(uri: session.targetUri); session.targetUri = null; return }
