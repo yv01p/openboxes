@@ -554,8 +554,10 @@ These specific Grails write paths continue to mutate identity-owned tables in Ph
 | `UserController.save/update/delete` (admin user CRUD via GSP) | user, person, user_role, location_role | Admin UI rebuild is days of GSP/React work; admin-rare; not on user-initiated auth lifecycle | Phase X (identity admin UI migration) or Phase 12 elimination |
 | `RoleController` (admin Role CRUD) | role | Admin-rare | Phase X |
 | `PersonController.save/update` (admin person CRUD via GSP) | person | Admin-rare | Phase X |
+| `JsonController.groovy:742-750` (`new Person()` + `.save()` in JSON API endpoint) | person | Admin-driven person creation via JSON (parallels `PersonController` GSP path); admin-rare | Phase X |
 | `ShipmentController.groovy:1083` (`new Person()` during shipment workflow) | person | Shipping-slice concern; Person creation tied to shipment recipient/sender resolution | Phase 8 (Shipping slice) |
 | `CreateShipmentWorkflowController.groovy:171,1080` (`new Person()` / `flash.personInstance = new Person()`) | person | Same as above | Phase 8 |
+| `PersonService.groovy:86,87,106,107` (`new Person()` in `extractFromInternetAddress` + `getOrCreatePersonFromNames`; callers: `CombinedShipmentService`, `ShipmentService`, `OrderService`, `PurchaseOrderActualReadyDateImportDataService`) | person | Shared helper for shipping/order/import workflows; person creation tied to recipient/sender resolution and bulk import | Phase 8 (Shipping) for workflow callers; Phase X for order + import; fully eliminated Phase 12 |
 | `UserImportDataService`, `UserLocationImportDataService`, `PersonImportDataService` (bulk import services) | user, person, user_role, location_role | Admin bulk-import paths; rarely exercised; migration is its own concern | Phase X (or kept until Phase 12) |
 | `LoadDataService.groovy` (data-loading bootstrap path) | user, person | One-off setup path | Phase 12 elimination |
 | `UserService.groovy:397-399` (Sql.execute bootstrap seed) | user | Seed/test bootstrap | Phase 12 elimination |
