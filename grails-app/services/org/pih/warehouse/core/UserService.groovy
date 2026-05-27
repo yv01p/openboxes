@@ -472,30 +472,6 @@ class UserService {
         return recipients
     }
 
-    /**
-     *
-     * @param username
-     * @param password
-     * @return
-     */
-    def authenticate(username, password) {
-        return authenticateUsingDatabase(username, password)
-    }
-
-    /**
-     *
-     * @param username
-     * @param password
-     * @return
-     */
-    def authenticateUsingDatabase(username, password) {
-        def userInstance = User.findByUsernameOrEmail(username, username)
-        if (userInstance) {
-            return (userInstance.password == password.encodeAsPassword() || userInstance.password == password)
-        }
-        return false
-    }
-
     def getDashboardConfig(User user, String id) {
         Gson gson = new Gson()
         // Creating a deep copy of the dashboard configuration

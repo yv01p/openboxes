@@ -222,8 +222,6 @@ class DashboardController {
             // Save the warehouse selection for "last logged into" information
             if (user) {
                 //userInstance.rememberLastLocation = Boolean.valueOf(params.rememberLastLocation)
-                user.lastLoginDate = new Date()
-                user.save(flush: true)
                 session.user = user
             }
 

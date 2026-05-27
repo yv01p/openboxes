@@ -11,7 +11,6 @@ package org.pih.warehouse.user
 
 import grails.core.GrailsApplication
 import grails.gorm.transactions.Transactional
-import grails.validation.ValidationException
 import org.pih.warehouse.auth.AccountDisabledException
 import org.pih.warehouse.auth.BadCredentialsException
 import org.pih.warehouse.auth.DuplicateUsernameException
@@ -19,7 +18,7 @@ import org.pih.warehouse.auth.InvalidTokenException
 import org.pih.warehouse.auth.JwtService
 import org.pih.warehouse.auth.PasswordTooWeakException
 import org.pih.warehouse.auth.SignupDisabledException
-import org.pih.warehouse.auth.UserSignupEvent
+import org.pih.warehouse.auth.ValidationException
 import org.pih.warehouse.core.MailService
 import org.pih.warehouse.core.User
 
