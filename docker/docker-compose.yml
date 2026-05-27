@@ -25,6 +25,8 @@ services:
       depends_on:
         db:
           condition: service_healthy
+        app:
+          condition: service_healthy
 
     nginx:
       extends:
@@ -34,6 +36,8 @@ services:
         app:
           condition: service_healthy
         document-service:
+          condition: service_healthy
+        identity-service:
           condition: service_healthy
 
     db:
