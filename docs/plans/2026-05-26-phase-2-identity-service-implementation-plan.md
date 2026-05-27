@@ -19,8 +19,8 @@
 - `services/identity-service/build.gradle` — Gradle deps (mirrors document-service)
 - `services/identity-service/Dockerfile` — multi-stage temurin:21-jre + apt-get curl + non-root spring user
 - `services/identity-service/src/main/java/org/openboxes/identity/IdentityServiceApplication.java` — Spring Boot entry point
-- `services/identity-service/src/main/java/org/openboxes/identity/entity/{Person,User,Role,LocationRole,RoleType,PasswordResetToken}.java` — JPA entities; JOINED inheritance for User↔Person
-- `services/identity-service/src/main/java/org/openboxes/identity/repository/{PersonRepository,UserRepository,RoleRepository,LocationRoleRepository,PasswordResetTokenRepository}.java` — Spring Data JPA repositories
+- `services/identity-service/src/main/java/org/openboxes/identity/entity/{Person,User,Role,LocationRole,RoleType,PasswordResetToken,Location}.java` — JPA entities; JOINED inheritance for User↔Person; `Location` is read-only (Phase 3 will own writes)
+- `services/identity-service/src/main/java/org/openboxes/identity/repository/{PersonRepository,UserRepository,RoleRepository,LocationRoleRepository,PasswordResetTokenRepository,LocationRepository}.java` — Spring Data JPA repositories
 - `services/identity-service/src/main/java/org/openboxes/identity/password/{OpenboxesPasswordEncoder,PasswordMigrator,PasswordComplexityValidator}.java` — custom PasswordEncoder + auto-migrate + complexity rules
 - `services/identity-service/src/main/java/org/openboxes/identity/security/{RoleTypeCache,JwtCookieAuthFilter,SecurityConfig}.java` — admin-authz cache + JWT filter + filter chain
 - `services/identity-service/src/main/java/org/openboxes/identity/service/{AuthService,JwtService,CookieService,SignupService,EmailService,RecaptchaService,PasswordResetService,UserLookupService}.java` — domain services
@@ -273,8 +273,12 @@ sudo docker exec openboxes-db mysql -uopenboxes -popenboxes openboxes -e "
   SELECT id, username, LENGTH(password), LEFT(password, 4) AS prefix FROM \`user\` WHERE username = 'admin';
 "
 # Length 28 = SHA-1+Base64; length 60 + prefix '\$2a\$' = BCrypt
+# Verify active=NULL distribution on person (informs Task 16 fixture + login null-active handling)
+sudo docker exec openboxes-db mysql -uopenboxes -popenboxes openboxes -e "
+  SELECT COUNT(*) AS null_active_persons FROM person WHERE active IS NULL;
+"
 ```
-Record column-by-column shapes + role IDs + admin password format in audit doc.
+Record column-by-column shapes + role IDs + admin password format + null-active count in audit doc.
 
 - [ ] **Step 5: Commit audit.**
 ```bash
@@ -446,8 +450,8 @@ git commit -m "phase 2 task 2: bootstrap identity-service module + Dockerfile + 
 ### Task 3: Port JPA entities (Person/User/Role/LocationRole/RoleType/PasswordResetToken) (§8 Step 3)
 
 **Files:**
-- Create: `services/identity-service/src/main/java/org/openboxes/identity/entity/{Person,User,Role,LocationRole,PasswordResetToken,RoleType}.java`
-- Create: `services/identity-service/src/main/java/org/openboxes/identity/repository/{PersonRepository,UserRepository,RoleRepository,LocationRoleRepository,PasswordResetTokenRepository}.java`
+- Create: `services/identity-service/src/main/java/org/openboxes/identity/entity/{Person,User,Role,LocationRole,PasswordResetToken,RoleType,Location}.java`
+- Create: `services/identity-service/src/main/java/org/openboxes/identity/repository/{PersonRepository,UserRepository,RoleRepository,LocationRoleRepository,PasswordResetTokenRepository,LocationRepository}.java`
 
 - [ ] **Step 1: Read the actual schema** from `grails-app/migrations/install/changelog-create-tables.groovy` lines 1184 (location_role), 1750 (person), 2938 (role), 3644 (user), 3673 (user_role) — match column types/lengths exactly.
 
@@ -528,7 +532,20 @@ public class User extends Person {
 }
 ```
 
-- [ ] **Step 5: Create `Role.java` + `LocationRole.java` + `PasswordResetToken.java`** per spec §7.1 (verbatim; @Version Long on Role; @Version Integer on LocationRole; password_reset_token new entity).
+- [ ] **Step 5: Create `Role.java` + `LocationRole.java` + `PasswordResetToken.java` + `Location.java`** per spec §7.1 (verbatim; @Version Long on Role; @Version Integer on LocationRole; password_reset_token new entity). `Location.java` is a read-only minimal mapping for §6.1's 404/disabled checks and `location.name` population — maps `{id: CHAR(38), name: String, active: Boolean}` against the existing `location` table; identity-service NEVER writes (location-service is Phase 3-owned).
+```java
+package org.openboxes.identity.entity;
+import jakarta.persistence.*;
+@Entity @Table(name = "location")
+public class Location {
+    @Id @Column(columnDefinition = "CHAR(38)") private String id;
+    @Column(nullable = false, length = 255) private String name;
+    @Column private Boolean active;
+    public String getId() { return id; }
+    public String getName() { return name; }
+    public Boolean getActive() { return active; }
+}
+```
 
 - [ ] **Step 6: Create Spring Data JPA repositories.**
 ```java
@@ -545,7 +562,7 @@ public interface UserRepository extends JpaRepository<User, String> {
     Optional<User> findByUsernameOrEmail(String s);
 }
 ```
-PersonRepository, RoleRepository, LocationRoleRepository, PasswordResetTokenRepository all extend `JpaRepository<Entity, String>`; RoleRepository adds `Optional<Role> findByRoleType(RoleType)`; PasswordResetTokenRepository adds `Optional<PasswordResetToken> findByTokenAndUsedAtIsNull(String)` and `deleteByExpiresAtBefore(Instant)`.
+PersonRepository, RoleRepository, LocationRoleRepository, PasswordResetTokenRepository, LocationRepository all extend `JpaRepository<Entity, String>`; RoleRepository adds `Optional<Role> findByRoleType(RoleType)`; PasswordResetTokenRepository adds `Optional<PasswordResetToken> findByTokenAndUsedAtIsNull(String)` and `deleteByExpiresAtBefore(Instant)`. LocationRepository needs no custom queries — uses inherited `findById(String)`.
 
 - [ ] **Step 7: Rebuild + restart + JPA `validate` smoke-test.**
 ```bash
@@ -940,9 +957,11 @@ public class CookieService {
 ```java
 package org.openboxes.identity.service;
 
-import org.openboxes.identity.entity.User;
+import org.openboxes.identity.entity.Location;
 import org.openboxes.identity.entity.LocationRole;
+import org.openboxes.identity.entity.User;
 import org.openboxes.identity.password.OpenboxesPasswordEncoder;
+import org.openboxes.identity.repository.LocationRepository;
 import org.openboxes.identity.repository.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -955,11 +974,13 @@ import java.util.stream.Collectors;
 @Service
 public class AuthService {
     private final UserRepository userRepository;
+    private final LocationRepository locationRepository;
     private final OpenboxesPasswordEncoder passwordEncoder;
     private final JwtService jwtService;
 
-    public AuthService(UserRepository userRepository, OpenboxesPasswordEncoder passwordEncoder, JwtService jwtService) {
+    public AuthService(UserRepository userRepository, LocationRepository locationRepository, OpenboxesPasswordEncoder passwordEncoder, JwtService jwtService) {
         this.userRepository = userRepository;
+        this.locationRepository = locationRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
     }
@@ -968,7 +989,7 @@ public class AuthService {
     public LoginResult login(String usernameOrEmail, String rawPassword, String locationId) {
         User user = userRepository.findByUsernameOrEmail(usernameOrEmail)
             .orElseThrow(() -> new BadCredentialsException("invalid credentials"));
-        if (Boolean.FALSE.equals(user.getActive())) throw new AccountDisabledException("account disabled");
+        if (!Boolean.TRUE.equals(user.getActive())) throw new AccountDisabledException("account disabled");
         OpenboxesPasswordEncoder.setCurrentUserId(user.getId());
         try {
             if (!passwordEncoder.matches(rawPassword, user.getPassword())) {
@@ -977,15 +998,21 @@ public class AuthService {
         } finally {
             OpenboxesPasswordEncoder.clearCurrentUserId();
         }
+        // Login does NOT enforce 404/disabled on location (per spec §6.1 — only chooseLocation does); nullable lookup populates `location.name`.
+        Location location = locationId == null ? null : locationRepository.findById(locationId).orElse(null);
         List<String> roleIds = user.getRoles().stream().map(r -> r.getId()).collect(Collectors.toList());
         String token = jwtService.issue(user, locationId, roleIds);
-        return new LoginResult(user, locationId, roleIds, token);
+        return new LoginResult(user, location, roleIds, token);
     }
 
     @Transactional
     public ChooseLocationResult chooseLocation(String userId, String locationId) {
         User user = userRepository.findById(userId)
             .orElseThrow(() -> new BadCredentialsException("user not found"));
+        // Spec §6.1 chooseLocation: 404 on bad locationId, 403 on disabled location.
+        Location location = locationRepository.findById(locationId)
+            .orElseThrow(() -> new LocationNotFoundException("location not found: " + locationId));
+        if (Boolean.FALSE.equals(location.getActive())) throw new LocationDisabledException("location disabled: " + locationId);
         // Validate user has a LocationRole for the location OR the location's roles allow this user
         boolean allowed = user.getLocationRoles().stream()
             .anyMatch(lr -> locationId.equals(lr.getLocationId()));
@@ -1003,12 +1030,14 @@ public class AuthService {
         List<String> roleIds = new java.util.ArrayList<>(effective);
 
         String token = jwtService.issue(user, locationId, roleIds);
-        return new ChooseLocationResult(user, locationId, roleIds, token);
+        return new ChooseLocationResult(user, location, roleIds, token);
     }
 
     public MeResult me(String userId, String locationId) {
         User user = userRepository.findById(userId)
             .orElseThrow(() -> new BadCredentialsException("user not found"));
+        // Nullable location lookup: null locationId or stale-id → null Location in response (per spec §6.1 /me row).
+        Location location = locationId == null ? null : locationRepository.findById(locationId).orElse(null);
         Set<String> effective = new java.util.HashSet<>();
         user.getRoles().forEach(r -> effective.add(r.getId()));
         if (locationId != null) {
@@ -1016,11 +1045,11 @@ public class AuthService {
                 .filter(lr -> locationId.equals(lr.getLocationId()))
                 .forEach(lr -> effective.add(lr.getRole().getId()));
         }
-        return new MeResult(user, locationId, new java.util.ArrayList<>(effective));
+        return new MeResult(user, location, new java.util.ArrayList<>(effective));
     }
 }
 ```
-Plus result records (LoginResult, ChooseLocationResult, MeResult) and exception classes (BadCredentialsException → 401, AccountDisabledException → 403, AccessDeniedException → 403).
+Plus result records (LoginResult, ChooseLocationResult, MeResult — each carrying a `Location` reference: nullable for LoginResult/MeResult, non-null for ChooseLocationResult) and exception classes (BadCredentialsException → 401, AccountDisabledException → 403, AccessDeniedException → 403, LocationNotFoundException → 404, LocationDisabledException → 403).
 
 - [ ] **Step 4: Create `AuthController.java`** with the 4 endpoints.
 ```java
@@ -1569,8 +1598,10 @@ public class UserLookupController {
 public class GlobalExceptionHandler {
     @ExceptionHandler(BadCredentialsException.class)
     public ResponseEntity<?> badCreds() { return ResponseEntity.status(401).body(Map.of("error","invalid credentials")); }
-    @ExceptionHandler({AccountDisabledException.class, AccessDeniedException.class, RecaptchaException.class, SignupDisabledException.class})
+    @ExceptionHandler({AccountDisabledException.class, AccessDeniedException.class, LocationDisabledException.class, RecaptchaException.class, SignupDisabledException.class})
     public ResponseEntity<?> forbidden(Exception e) { return ResponseEntity.status(403).body(Map.of("error", e.getMessage())); }
+    @ExceptionHandler(LocationNotFoundException.class)
+    public ResponseEntity<?> notFound(Exception e) { return ResponseEntity.status(404).body(Map.of("error", e.getMessage())); }
     @ExceptionHandler({DuplicateUsernameException.class, DuplicateEmailException.class})
     public ResponseEntity<?> conflict(Exception e) { return ResponseEntity.status(409).body(Map.of("error", e.getMessage())); }
     @ExceptionHandler({PasswordTooWeakException.class, InvalidTokenException.class})
@@ -2118,9 +2149,11 @@ git commit -m "phase 2 task 15: React URL updates (LoginModal + actions/index.js
   - `loginGoodCreds_returns200AndSetsCookie`
   - `loginBadCreds_returns401`
   - `loginDisabledAccount_returns403`
+  - `loginNullActiveAccount_returns403`
   - `logout_clearsCookie`
   - `chooseLocation_reissuesJwtAndUpdatesLastLoginDate`
   - `chooseLocation_404OnBadLocationId`
+  - `chooseLocation_403OnDisabledLocation`
   - `me_returnsUserAndLocationAndEffectiveRoles`
   - `signup_createsUserAndPersonAndSendsEmail` (asserts JavaMailSender mock invoked)
   - `signup_409OnDuplicateUsername`
@@ -2140,6 +2173,7 @@ git commit -m "phase 2 task 15: React URL updates (LoginModal + actions/index.js
   - legacy user with SHA-1+Base64 password (use `OpenboxesPasswordEncoder.sha1Base64("legacy")` to compute)
   - cleartext user with literal "cleartext" stored
   - disabled user (active=false on Person row)
+  - null-active user (active=NULL on Person row) — for `loginNullActiveAccount_returns403`
   - role: ROLE_ADMIN, ROLE_BROWSER
 
 - [ ] **Step 3: Run tests.**
