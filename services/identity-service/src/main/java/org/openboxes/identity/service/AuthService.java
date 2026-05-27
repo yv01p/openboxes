@@ -63,9 +63,6 @@ public class AuthService {
         Location location = null;
         if (locationId != null) {
             location = locationRepository.findById(locationId).orElse(null);
-            if (location != null && Boolean.FALSE.equals(location.getActive())) {
-                location = null;
-            }
         }
 
         List<String> roleIds = user.getRoles().stream().map(Role::getId).collect(Collectors.toList());
