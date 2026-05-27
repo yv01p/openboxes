@@ -1674,6 +1674,17 @@ git commit -m "phase 2 task 11: nginx /api/identity routing block above /api/doc
 - Create: `grails-app/services/org/pih/warehouse/auth/IdentityClient.groovy`
 - Modify: `grails-app/conf/spring/resources.groovy:23-24` — add `identityClient(...)` line
 
+**IMPORTANT — Spring 4.x catch pattern:**  
+Grails 3 ships Spring Boot 1.5 + Spring 4.3.30. `HttpClientErrorException.Unauthorized` / `.Forbidden` / `.BadRequest` / `.Conflict` nested subclasses were added in Spring 5. Use parent class + `statusCode`-check pattern instead:
+```groovy
+try { ... }
+catch (HttpClientErrorException e) {
+    if (e.statusCode == HttpStatus.UNAUTHORIZED) { throw new BadCredentialsException(...) }
+    else if (e.statusCode == HttpStatus.FORBIDDEN) { throw new AccountDisabledException(...) }
+    else throw e
+}
+```
+
 - [ ] **Step 1: Create `IdentityClient.groovy`** mirroring `DocumentClient.groovy` pattern (long-lived RestTemplate, 5s/10s timeouts, drain-and-disconnect).
 ```groovy
 package org.pih.warehouse.auth
@@ -1811,6 +1822,9 @@ git commit -m "phase 2 task 12: IdentityClient service + Spring DI wiring"
 - Modify: `grails-app/controllers/org/pih/warehouse/user/AuthController.groovy:69-153,178-222` — `handleLogin`, `logout`, `handleSignup` become shims; add `forgotPassword`, `resetPassword` actions
 - Modify: `grails-app/controllers/org/pih/warehouse/user/UserController.groovy:278-299` — `changePassword` routes to admin or self-edit endpoint
 - Modify: `grails-app/views/user/edit.gsp:132-160` — add `currentPassword` input field inside `#password-tab`
+
+**IMPORTANT — Spring 4.x catch pattern (see Task 12 for full example):**  
+All catch blocks for `BadCredentialsException`, `AccountDisabledException`, `ValidationException` thrown from `identityClient.*` calls must use the parent `HttpClientErrorException` + `statusCode`-check pattern, NOT Spring 5+ nested subclasses like `.Unauthorized`.
 
 - [ ] **Step 1: Replace `ApiController.login`** (lines 43-61). Each shim follows the same pattern: forward request, set `session.user` + `session.warehouse` from response, forward `Set-Cookie`.
 ```groovy
@@ -2072,17 +2086,17 @@ git commit -m "phase 2 task 14: JwtService reduction (delete issue + buildSetCoo
 ```
 ```diff
 - const url = `/api/chooseLocation/${this.props.currentLocationId}`;
-- return apiClient.post(url);
 + const url = `/api/identity/chooseLocation/${this.props.currentLocationId}`;
+- return apiClient.post(url);
 + return apiClient.put(url);
 ```
+(NOTE: Existing code at LoginModal.jsx:43 is already `.put` — the verb change shown is a no-op; only the URL path changes. Spec author hallucinated the prior state.)
 
-- [ ] **Step 2: Update actions/index.js URL + verb.**
+- [ ] **Step 2: Update actions/index.js URL.**
 ```diff
 - const url = `/api/chooseLocation/${location.id}`;
-- ... apiClient.post(url)
 + const url = `/api/identity/chooseLocation/${location.id}`;
-+ ... apiClient.put(url)
++ ... apiClient.put(url)   // (already .put at actions/index.js:222; no verb change needed)
 ```
 (Verify exact existing call shape via `grep -n -A2 "chooseLocation" src/js/actions/index.js`.)
 
@@ -2123,7 +2137,18 @@ git commit -m "phase 2 task 14: JwtService reduction (delete issue + buildSetCoo
 </body></html>
 ```
 
-- [ ] **Step 6: Rebuild + restart; smoke-test React login flow + GSP forgot-password.**
+- [ ] **Step 6: Update SecurityInterceptor allowlists** for forgotPassword + resetPassword GSP routes.
+```groovy
+// In grails-app/controllers/org/pih/warehouse/SecurityInterceptor.groovy
+// Add to actionsWithLocationNotRequired (around line 38):
+'forgotPassword', 'resetPassword'
+
+// Also add to actionsWithAuthUserNotRequired (around line 42-52):
+'forgotPassword', 'resetPassword'
+```
+Without this, the new GSPs return 302 redirect-to-login (SecurityInterceptor blocks unauthenticated access).
+
+- [ ] **Step 7: Rebuild + restart; smoke-test React login flow + GSP forgot-password.**
 ```bash
 ./gradlew prepareDocker -Dgrails.env=prod -x generateGitProperties --console=plain
 cd docker && sudo docker-compose up -d --build app && sleep 60
@@ -2132,7 +2157,7 @@ cd docker && sudo docker-compose up -d --build app && sleep 60
 # GSP: open http://localhost/openboxes/auth/forgotPassword, submit email, verify redirect with flash message
 ```
 
-- [ ] **Step 7: Commit.**
+- [ ] **Step 8: Commit.**
 ```bash
 git add src/js/components/LoginModal.jsx src/js/actions/index.js \
         grails-app/views/auth/forgotPassword.gsp grails-app/views/auth/resetPassword.gsp
@@ -2165,7 +2190,7 @@ git commit -m "phase 2 task 15: React URL updates (LoginModal + actions/index.js
   - `passwordResetConfirm_validatesTokenAndUpdatesHash`
   - `passwordResetConfirm_400OnUsedToken` / `_400OnExpiredToken`
   - `sha1AutoMigrate_acceptsSha1ThenStoresBcrypt` (asserts post-login the user row's password starts with `$2a$`)
-  - `cleartextStored_rejected` (seed user with literal "password" → assert login returns 401)
+  - `cleartextStored_rejected` (seed user with literal "cleartext" → assert login returns 401)
   - `adminEndpoint_403WhenCallerNotAdmin` / `200WhenCallerIsAdmin` (uses RoleTypeCache)
 
 - [ ] **Step 2: Create `seed.sql`** with fixture persons/users:
