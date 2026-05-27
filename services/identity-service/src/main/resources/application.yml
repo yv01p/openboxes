@@ -1,0 +1,45 @@
+server:
+  port: 8082
+spring:
+  application:
+    name: identity-service
+  datasource:
+    url: ${DATASOURCE_URL}
+    username: ${DATASOURCE_USERNAME}
+    password: ${DATASOURCE_PASSWORD}
+    driver-class-name: org.mariadb.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate   # schema is owned by Liquibase + Grails shadow
+    properties:
+      hibernate.dialect: org.hibernate.dialect.MariaDBDialect
+  liquibase:
+    enabled: false   # Task 2: disabled until Task 4 adds identity-changelog-master.xml
+    change-log: classpath:db/changelog/identity-changelog-master.xml
+  mail:
+    host: ${MAIL_HOST:smtp.example.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.starttls.enable: true
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  health:
+    mail:
+      enabled: false   # Task 2: mail server not configured yet; exclude from health check
+openboxes:
+  jwt:
+    secret: ${OPENBOXES_JWT_SECRET}
+  mail:
+    from: ${MAIL_FROM:openboxes@example.com}
+  signup:
+    enabled: ${OPENBOXES_SIGNUP_ENABLED:false}
+    default-roles: ${OPENBOXES_SIGNUP_DEFAULT_ROLES:ROLE_BROWSER}
+    recaptcha:
+      enabled: ${OPENBOXES_SIGNUP_RECAPTCHA_ENABLED:false}
+      secret: ${OPENBOXES_SIGNUP_RECAPTCHA_SECRET:}

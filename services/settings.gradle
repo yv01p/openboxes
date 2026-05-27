@@ -1,2 +1,3 @@
 rootProject.name = 'openboxes-services'
 include 'document-service'
+include 'identity-service'

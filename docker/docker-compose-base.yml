@@ -42,6 +42,34 @@ services:
         retries: 5
         start_period: 30s
 
+    identity-service:
+      build:
+        context: ../services/identity-service
+        dockerfile: Dockerfile
+      container_name: openboxes-identity-service
+      expose:
+        - "8082"
+      environment:
+        DATASOURCE_URL: ${DATASOURCE_URL:-jdbc:mariadb://db:3306/openboxes?serverTimezone=UTC&useSSL=false}
+        DATASOURCE_USERNAME: ${DATASOURCE_USERNAME:-openboxes}
+        DATASOURCE_PASSWORD: ${DATASOURCE_PASSWORD:-openboxes}
+        OPENBOXES_JWT_SECRET: ${OPENBOXES_JWT_SECRET:-dev-secret-only-for-local-please-rotate-in-prod}
+        MAIL_HOST: ${MAIL_HOST:-localhost}
+        MAIL_PORT: ${MAIL_PORT:-1025}
+        MAIL_USERNAME: ${MAIL_USERNAME:-}
+        MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+        MAIL_FROM: ${MAIL_FROM:-openboxes@example.com}
+        OPENBOXES_SIGNUP_ENABLED: ${OPENBOXES_SIGNUP_ENABLED:-false}
+        OPENBOXES_SIGNUP_DEFAULT_ROLES: ${OPENBOXES_SIGNUP_DEFAULT_ROLES:-ROLE_BROWSER}
+        OPENBOXES_SIGNUP_RECAPTCHA_ENABLED: ${OPENBOXES_SIGNUP_RECAPTCHA_ENABLED:-false}
+        OPENBOXES_SIGNUP_RECAPTCHA_SECRET: ${OPENBOXES_SIGNUP_RECAPTCHA_SECRET:-}
+      healthcheck:
+        test: "curl --fail --silent localhost:8082/actuator/health | grep '\"status\":\"UP\"' || exit 1"
+        interval: 10s
+        timeout: 5s
+        retries: 5
+        start_period: 30s
+
     nginx:
       image: nginx:1.13
       container_name: openboxes-nginx

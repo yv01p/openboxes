@@ -18,6 +18,14 @@ services:
         app:
           condition: service_healthy
 
+    identity-service:
+      extends:
+        file: docker-compose-base.yml
+        service: identity-service
+      depends_on:
+        db:
+          condition: service_healthy
+
     nginx:
       extends:
         file: docker-compose-base.yml
