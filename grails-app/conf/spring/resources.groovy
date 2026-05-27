@@ -21,4 +21,5 @@ beans = {
     productValidator(ProductValidator)
 
     documentClient(org.pih.warehouse.core.DocumentClient)
+    identityClient(org.pih.warehouse.auth.IdentityClient)
 }
