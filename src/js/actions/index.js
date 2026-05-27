@@ -217,7 +217,7 @@ export function fetchMenuConfig() {
 
 export function changeCurrentLocation(location) {
   return (dispatch) => {
-    const url = `/api/chooseLocation/${location.id}`;
+    const url = `/api/identity/chooseLocation/${location.id}`;
 
     return apiClient.put(url).then(() => {
       dispatch({

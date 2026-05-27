@@ -21,7 +21,7 @@ class LoginForm extends Component {
   }
 
   onLogin() {
-    const url = '/api/login';
+    const url = '/api/identity/login';
     const payload = {
       username: this.state.username,
       password: this.state.password,
@@ -38,7 +38,7 @@ class LoginForm extends Component {
   }
 
   setUserLocation() {
-    const url = `/api/chooseLocation/${this.props.currentLocationId}`;
+    const url = `/api/identity/chooseLocation/${this.props.currentLocationId}`;
 
     return apiClient.put(url);
   }
@@ -75,6 +75,11 @@ class LoginForm extends Component {
               this.setState({ password: event.target.value });
             }}
           />
+          <div className="px-3 pb-2">
+            <a href="/openboxes/auth/forgotPassword" className="text-sm">
+              {this.props.translate('react.default.forgotPassword.label', 'Forgot password?')}
+            </a>
+          </div>
           <button
             type="button"
             className="btn btn-outline-primary btn-block my-3"
