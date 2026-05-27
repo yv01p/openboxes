@@ -10,11 +10,11 @@ spring:
     driver-class-name: org.mariadb.jdbc.Driver
   jpa:
     hibernate:
-      ddl-auto: none   # Task 3: temporarily none (password_reset_token table doesn't exist yet); Task 4 reverts to validate
+      ddl-auto: validate
     properties:
       hibernate.dialect: org.hibernate.dialect.MariaDBDialect
   liquibase:
-    enabled: false   # Task 2: disabled until Task 4 adds identity-changelog-master.xml
+    enabled: true
     change-log: classpath:db/changelog/identity-changelog-master.xml
   mail:
     host: ${MAIL_HOST:smtp.example.com}

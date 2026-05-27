@@ -1,0 +1,22 @@
+<?xml version="1.1" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                       https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.20.xsd"
+                   logicalFilePath="services/identity-service/db/changelog/changelog-create-table-user-role.xml">
+    <changeSet id="phase2-shadow-create-user-role" author="openboxes-identity">
+        <preConditions onFail="MARK_RAN">
+            <not><tableExists tableName="user_role"/></not>
+        </preConditions>
+        <createTable tableName="user_role">
+            <column name="user_id" type="CHAR(38)"/>
+            <column name="role_id" type="CHAR(38)"/>
+        </createTable>
+        <addForeignKeyConstraint baseTableName="user_role" baseColumnNames="user_id"
+                                 constraintName="fk_user_role_user"
+                                 referencedTableName="user" referencedColumnNames="id"/>
+        <addForeignKeyConstraint baseTableName="user_role" baseColumnNames="role_id"
+                                 constraintName="fk_user_role_role"
+                                 referencedTableName="role" referencedColumnNames="id"/>
+    </changeSet>
+</databaseChangeLog>

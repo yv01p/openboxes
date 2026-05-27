@@ -1,0 +1,36 @@
+<?xml version="1.1" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                       https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.20.xsd"
+                   logicalFilePath="services/identity-service/db/changelog/changelog-create-table-user.xml"
+                   objectQuotingStrategy="QUOTE_ALL_OBJECTS">
+    <changeSet id="phase2-shadow-create-user" author="openboxes-identity">
+        <preConditions onFail="MARK_RAN">
+            <not><tableExists tableName="user"/></not>
+        </preConditions>
+        <createTable tableName="user">
+            <column name="id" type="CHAR(38)">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="last_login_date" type="DATETIME"/>
+            <column name="manager_id" type="CHAR(38)"/>
+            <column name="password" type="VARCHAR(255)"/>
+            <column name="username" type="VARCHAR(255)">
+                <constraints unique="true"/>
+            </column>
+            <column name="warehouse_id" type="CHAR(38)"/>
+            <column name="photo" type="MEDIUMBLOB"/>
+            <column name="locale" type="VARCHAR(255)"/>
+            <column name="remember_last_location" type="BIT(1)"/>
+            <column name="timezone" type="VARCHAR(255)"/>
+            <column name="dashboard_config" type="LONGBLOB"/>
+        </createTable>
+        <addForeignKeyConstraint baseTableName="user" baseColumnNames="manager_id"
+                                 constraintName="fk_user_manager"
+                                 referencedTableName="user" referencedColumnNames="id"/>
+        <addForeignKeyConstraint baseTableName="user" baseColumnNames="warehouse_id"
+                                 constraintName="fk_user_warehouse"
+                                 referencedTableName="location" referencedColumnNames="id"/>
+    </changeSet>
+</databaseChangeLog>
