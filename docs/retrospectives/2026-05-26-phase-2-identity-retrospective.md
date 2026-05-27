@@ -113,7 +113,7 @@ Plan's preserved §16 at lines :2303-2327 is starting material — DO NOT take v
 - **Design spec**: `docs/specs/2026-05-26-phase-2-identity-service-design.md`
 - **Scope audit**: `docs/audits/2026-05-26-phase-2-identity-scope-audit.md` (Task 3 output)
 - **Tag**: `phase-2-identity` at `899dd4a63` (CI-green; local + remote)
-- **Commit range** (Phase 2 core): `7f86af15c..899dd4a63` (25 commits)
+- **Commit range** (Phase 2 core): `7f86af15c..899dd4a63` (24 commits)
 - **Commit range** (Phase 2 + T19 back-ports): `7f86af15c..cc747188a` (32 commits)
 - **Phase 1 retrospective** (predecessor): `docs/retrospectives/2026-05-26-phase-1-document-retrospective.md`
 - **Handoff docs** (3 sessions): `docs/handoffs/2026-05-26-phase-2-identity-handoff-{1,2,3}.md`
