@@ -5,25 +5,14 @@
                        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.20.xsd"
                    logicalFilePath="services/identity-service/db/changelog/changelog-create-table-location-role.xml">
     <changeSet id="phase2-shadow-create-location-role" author="openboxes-identity">
-        <preConditions onFail="MARK_RAN">
-            <not><tableExists tableName="location_role"/></not>
+        <preConditions onFail="MARK_RAN" onFailMessage="location_role table not found — Grails Liquibase must run first to create table per grails-app/migrations/install/changelog-create-tables.groovy">
+            <columnExists tableName="location_role" columnName="id"/>
         </preConditions>
-        <createTable tableName="location_role">
-            <column name="user_id" type="CHAR(38)"/>
-            <column name="location_id" type="CHAR(38)"/>
-            <column name="role_id" type="CHAR(38)"/>
-            <column name="version" type="INT"/>
-            <column name="id" type="CHAR(38)"/>
-            <column name="location_roles_idx" type="INT"/>
-        </createTable>
-        <addForeignKeyConstraint baseTableName="location_role" baseColumnNames="user_id"
-                                 constraintName="fk_location_role_user"
-                                 referencedTableName="user" referencedColumnNames="id"/>
-        <addForeignKeyConstraint baseTableName="location_role" baseColumnNames="location_id"
-                                 constraintName="fk_location_role_location"
-                                 referencedTableName="location" referencedColumnNames="id"/>
-        <addForeignKeyConstraint baseTableName="location_role" baseColumnNames="role_id"
-                                 constraintName="fk_location_role_role"
-                                 referencedTableName="role" referencedColumnNames="id"/>
+        <comment>
+            Shadow for location_role join table (Grails-owned GORM List mapping). Grails Liquibase owns table creation via install/changelog-create-tables.groovy.
+            identity-service uses spring.jpa.hibernate.ddl-auto=validate to prove entity-mapping correctness.
+            This changeset marks-ran if Grails already created the table; no DDL body needed.
+        </comment>
+        <!-- No body: table already exists per the precondition. -->
     </changeSet>
 </databaseChangeLog>

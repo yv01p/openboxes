@@ -6,31 +6,14 @@
                    logicalFilePath="services/identity-service/db/changelog/changelog-create-table-user.xml"
                    objectQuotingStrategy="QUOTE_ALL_OBJECTS">
     <changeSet id="phase2-shadow-create-user" author="openboxes-identity">
-        <preConditions onFail="MARK_RAN">
-            <not><tableExists tableName="user"/></not>
+        <preConditions onFail="MARK_RAN" onFailMessage="user table not found — Grails Liquibase must run first to create table per grails-app/migrations/install/changelog-create-tables.groovy">
+            <columnExists tableName="user" columnName="id"/>
         </preConditions>
-        <createTable tableName="user">
-            <column name="id" type="CHAR(38)">
-                <constraints primaryKey="true" nullable="false"/>
-            </column>
-            <column name="last_login_date" type="DATETIME"/>
-            <column name="manager_id" type="CHAR(38)"/>
-            <column name="password" type="VARCHAR(255)"/>
-            <column name="username" type="VARCHAR(255)">
-                <constraints unique="true"/>
-            </column>
-            <column name="warehouse_id" type="CHAR(38)"/>
-            <column name="photo" type="MEDIUMBLOB"/>
-            <column name="locale" type="VARCHAR(255)"/>
-            <column name="remember_last_location" type="BIT(1)"/>
-            <column name="timezone" type="VARCHAR(255)"/>
-            <column name="dashboard_config" type="LONGBLOB"/>
-        </createTable>
-        <addForeignKeyConstraint baseTableName="user" baseColumnNames="manager_id"
-                                 constraintName="fk_user_manager"
-                                 referencedTableName="user" referencedColumnNames="id"/>
-        <addForeignKeyConstraint baseTableName="user" baseColumnNames="warehouse_id"
-                                 constraintName="fk_user_warehouse"
-                                 referencedTableName="location" referencedColumnNames="id"/>
+        <comment>
+            Shadow for User entity (JOINED inheritance child of Person). Grails Liquibase owns table creation via install/changelog-create-tables.groovy.
+            identity-service uses spring.jpa.hibernate.ddl-auto=validate to prove entity-mapping correctness.
+            This changeset marks-ran if Grails already created the table; no DDL body needed.
+        </comment>
+        <!-- No body: table already exists per the precondition. -->
     </changeSet>
 </databaseChangeLog>

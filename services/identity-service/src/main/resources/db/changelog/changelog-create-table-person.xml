@@ -5,27 +5,14 @@
                        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.20.xsd"
                    logicalFilePath="services/identity-service/db/changelog/changelog-create-table-person.xml">
     <changeSet id="phase2-shadow-create-person" author="openboxes-identity">
-        <preConditions onFail="MARK_RAN">
-            <not><tableExists tableName="person"/></not>
+        <preConditions onFail="MARK_RAN" onFailMessage="person table not found — Grails Liquibase must run first to create table per grails-app/migrations/install/changelog-create-tables.groovy">
+            <columnExists tableName="person" columnName="id"/>
         </preConditions>
-        <createTable tableName="person">
-            <column name="id" type="CHAR(38)">
-                <constraints primaryKey="true" nullable="false"/>
-            </column>
-            <column name="version" type="BIGINT">
-                <constraints nullable="false"/>
-            </column>
-            <column name="date_created" type="DATETIME">
-                <constraints nullable="false"/>
-            </column>
-            <column name="email" type="VARCHAR(255)"/>
-            <column name="first_name" type="VARCHAR(255)"/>
-            <column name="last_name" type="VARCHAR(255)"/>
-            <column name="last_updated" type="DATETIME">
-                <constraints nullable="false"/>
-            </column>
-            <column name="phone_number" type="VARCHAR(255)"/>
-            <column name="active" type="BIT(1)" defaultValueBoolean="true"/>
-        </createTable>
+        <comment>
+            Shadow for Person entity. Grails Liquibase owns table creation via install/changelog-create-tables.groovy.
+            identity-service uses spring.jpa.hibernate.ddl-auto=validate to prove entity-mapping correctness.
+            This changeset marks-ran if Grails already created the table; no DDL body needed.
+        </comment>
+        <!-- No body: table already exists per the precondition. -->
     </changeSet>
 </databaseChangeLog>

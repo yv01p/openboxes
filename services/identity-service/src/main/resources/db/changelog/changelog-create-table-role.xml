@@ -5,23 +5,14 @@
                        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.20.xsd"
                    logicalFilePath="services/identity-service/db/changelog/changelog-create-table-role.xml">
     <changeSet id="phase2-shadow-create-role" author="openboxes-identity">
-        <preConditions onFail="MARK_RAN">
-            <not><tableExists tableName="role"/></not>
+        <preConditions onFail="MARK_RAN" onFailMessage="role table not found — Grails Liquibase must run first to create table per grails-app/migrations/install/changelog-create-tables.groovy">
+            <columnExists tableName="role" columnName="id"/>
         </preConditions>
-        <createTable tableName="role">
-            <column name="id" type="CHAR(38)">
-                <constraints primaryKey="true" nullable="false"/>
-            </column>
-            <column name="version" type="BIGINT">
-                <constraints nullable="false"/>
-            </column>
-            <column name="description" type="VARCHAR(255)"/>
-            <column name="role_type" type="VARCHAR(255)">
-                <constraints nullable="false"/>
-            </column>
-            <column name="name" type="VARCHAR(255)">
-                <constraints nullable="false"/>
-            </column>
-        </createTable>
+        <comment>
+            Shadow for Role entity. Grails Liquibase owns table creation via install/changelog-create-tables.groovy.
+            identity-service uses spring.jpa.hibernate.ddl-auto=validate to prove entity-mapping correctness.
+            This changeset marks-ran if Grails already created the table; no DDL body needed.
+        </comment>
+        <!-- No body: table already exists per the precondition. -->
     </changeSet>
 </databaseChangeLog>
