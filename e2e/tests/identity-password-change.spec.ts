@@ -53,13 +53,13 @@ function seedFixtureUser(): void {
 
 test.describe.serial('identity-service password change', () => {
   test.beforeAll(() => seedFixtureUser());
-  test.afterAll(() => {
+  // beforeEach (not afterAll) so each test starts from a known SHA-1 baseline even after
+  // worker crashes or --repeat-each cycles that bypass afterAll.
+  test.beforeEach(() => {
     dbExec(`UPDATE user SET password='${SHA1_PASSWORD_HASH}' WHERE username='${USER}'`);
   });
 
   test('GSP changePassword form + login with new password succeeds', async ({ request }) => {
-    dbExec(`UPDATE user SET password='${SHA1_PASSWORD_HASH}' WHERE username='${USER}'`);
-
     const loginRes = await request.post('/api/identity/login', {
       data: { username: USER, password: PWD },
       headers: { 'Content-Type': 'application/json' },
@@ -88,7 +88,6 @@ test.describe.serial('identity-service password change', () => {
   });
 
   test('SHA-1 row is migrated to BCrypt on successful login', async ({ request }) => {
-    dbExec(`UPDATE user SET password='${SHA1_PASSWORD_HASH}' WHERE username='${USER}'`);
     expect(dbExec(`SELECT password FROM user WHERE username='${USER}'`)).toBe(SHA1_PASSWORD_HASH);
 
     const loginRes = await request.post('/api/identity/login', {
