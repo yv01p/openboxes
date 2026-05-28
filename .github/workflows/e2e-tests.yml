@@ -33,7 +33,7 @@ jobs:
           cache: gradle
       - name: Build identity-service + document-service jars
         working-directory: services
-        run: ./gradlew :identity-service:bootJar :document-service:bootJar
+        run: ./gradlew :identity-service:bootJar :document-service:bootJar :location-service:bootJar
       - name: Boot docker compose stack
         working-directory: docker
         run: |
@@ -42,6 +42,7 @@ jobs:
             curl -sf http://localhost/openboxes/health \
               && docker exec openboxes-document-service curl -sf localhost:8081/actuator/health \
               && docker exec openboxes-identity-service curl -sf localhost:8082/actuator/health \
+              && docker exec openboxes-location-service curl -sf localhost:8083/actuator/health \
               && [ "$(curl -s -o /dev/null -w '%{http_code}' http://localhost/api/documents)" != "502" ] \
               && break
             sleep 5
@@ -76,6 +77,7 @@ jobs:
           echo "---app---" && docker logs openboxes-app 2>&1 | tail -100 || true
           echo "---document-service---" && docker logs openboxes-document-service 2>&1 | tail -100 || true
           echo "---identity-service---" && docker logs openboxes-identity-service 2>&1 | tail -100 || true
+          echo "---location-service---" && docker logs openboxes-location-service 2>&1 | tail -100 || true
           echo "---nginx---" && docker logs openboxes-nginx 2>&1 | tail -50 || true
       - name: Tear down
         if: always()
