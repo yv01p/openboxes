@@ -40,7 +40,7 @@ Alternatives considered and rejected:
 | # | Service | Owns (top-level entities) |
 |---|---|---|
 | 1 | **identity-service** | User, Role, Person, LocationRole, auth issuance/validation |
-| 2 | **location-service** | Location, LocationGroup, LocationType, LocationStatus |
+| 2 | **location-service** | Location, LocationGroup, LocationType (LocationStatus is an enum at `src/main/groovy/org/pih/warehouse/core/LocationStatus.groovy`, not a domain class; 3 entities total) |
 | 3 | **organization-service** | Organization, Party, PartyRole, PartyType, Supplier, Shipper, Address, Donor |
 | 4 | **document-service** | Document, DocumentType |
 | 5 | **catalog-service** | Product, ProductAttribute, ProductPackage, ProductSupplier, ProductCatalog, Category, Tag, UnitOfMeasure, UnitOfMeasureClass, Synonym |

@@ -134,7 +134,7 @@ Each follows the document-service shadow pattern:
   - `getById(id)`: cache hit OR call `refresh()` then retry
   - Used by `GET /api/location/type/*` endpoints AND internally by `Location` DTO assembly when serializing `location.locationType.name` etc.
   - Single-node safe (no distributed cache complexity)
-- **SupportedActivitiesEnum** (hardcoded Java enum mirroring Grails `ActivityCode` at `src/main/groovy/org/pih/warehouse/core/ActivityCode.groovy`, 31 values)
+- **SupportedActivitiesEnum** (hardcoded Java enum mirroring Grails `ActivityCode` at `src/main/groovy/org/pih/warehouse/core/ActivityCode.groovy`, 34 values)
   - No DB query; values returned directly from enum reflection (same pattern as Grails `LocationApiController.supportedActivities()` at `grails-app/controllers/org/pih/warehouse/api/LocationApiController.groovy:144-147`)
   - Used by `GET /api/location/supportedActivities`
   - Synchronization debt: if Grails adds an ActivityCode value, location-service's enum must be updated in lock-step (see §15)
@@ -165,13 +165,21 @@ Each follows the document-service shadow pattern:
 
 nginx config diff:
 ```nginx
-# Add this block BEFORE the /api/ catch-all
+# Add BOTH blocks BEFORE the /api/ catch-all.
+# Exact-match block is required for the bare-path LIST endpoint (`GET /api/location?type=...`)
+# because the prefix rule `/api/location/` only matches paths starting with `/api/location/`
+# (with trailing slash) — it does NOT match `/api/location` (no trailing slash, query string only).
+# Without the exact-match, the bare LIST falls through to the /api/ catch-all → Grails 301.
+location = /api/location {
+    proxy_pass http://location-service:8083;
+}
+
 location /api/location/ {
-    proxy_pass http://location-service:8083/;
+    proxy_pass http://location-service:8083;
 }
 ```
 
-(`location /api/location/` is more specific than `/api/locations/` per nginx prefix matching — verify the longer-prefix-wins logic doesn't accidentally route `/api/locations/x` to location-service. nginx routes via longest matching prefix; `/api/location/` would match `/api/locations/...` because the prefix `/api/location` is a substring. Mitigation: trailing slash in the route. The route `/api/location/` matches paths starting with exactly `/api/location/`, NOT `/api/locations`. Verified pattern.)
+(`location /api/location/` does NOT collide with `/api/locations/` (plural) — nginx prefix matching evaluates the trailing slash as part of the rule, so `/api/location/` only matches paths starting with `/api/location/`. The `=` exact-match modifier takes absolute precedence even over longer prefixes; sibling routes are unaffected. NOTE on `proxy_pass`: the trailing slash on `proxy_pass http://location-service:8083` is intentionally OMITTED — adding a trailing slash (`http://location-service:8083/`) would strip the matched prefix from the proxied path, causing requests to land at `/{id}` on the upstream instead of `/api/location/{id}`. Verified pattern; live in `docker/nginx/conf.d/app.conf:25-37`.)
 
 **Two URLs in parallel during Phase 3 → Phase X transition:**
 - `/api/locations/*` (plural, Grails) — used by React + writes + bin/zone
@@ -305,7 +313,7 @@ Phase X picks up Grails Location.groovy + related deletion once these blockers a
 - **identity-service still maps Location as a JPA entity** against the shared DB. After Phase 3, identity-service's Location.java entity coexists with location-service's Location.java entity, both mapping the same table. Schema changes require updating BOTH entities in lock-step. Phase 2 → Phase 3 accepts this debt; Phase X resolves.
 - **JwtCookieAuthFilter is duplicated.** Now in 3 services (document, identity, location). DRY violation deferred to Phase X.
 - **Internal-type-code list duplicated.** location-service's enum of bin/zone codes mirrors Grails `LocationTypeCode.listInternalTypeCodes()`. If Grails adds a new internal type, location-service's enum must be updated; mitigated by retrospective documentation + future test that exercises both lists.
-- **ActivityCode enum duplicated.** location-service's `SupportedActivitiesEnum` mirrors Grails `ActivityCode` enum (31 values at `src/main/groovy/org/pih/warehouse/core/ActivityCode.groovy`). If Grails adds a new activity code, location-service's enum must be updated in lock-step; mitigated by retrospective documentation + future test that exercises both lists. Same pattern as the LocationTypeCode debt above.
+- **ActivityCode enum duplicated.** location-service's `SupportedActivitiesEnum` mirrors Grails `ActivityCode` enum (34 values at `src/main/groovy/org/pih/warehouse/core/ActivityCode.groovy`). If Grails adds a new activity code, location-service's enum must be updated in lock-step; mitigated by retrospective documentation + future test that exercises both lists. Same pattern as the LocationTypeCode debt above.
 - **Parent design enumerated LocationStatus** (entity + table) that doesn't exist. Spec deviation noted in retrospective for parent design correction.
 - **No saga infrastructure.** Parent design's saga support arrives in Phase 7+. Phase 3 (read-only) doesn't need it; Phase X (write decoupling) does.
 
