@@ -28,6 +28,16 @@ services:
         app:
           condition: service_healthy
 
+    location-service:
+      extends:
+        file: docker-compose-base.yml
+        service: location-service
+      depends_on:
+        db:
+          condition: service_healthy
+        app:
+          condition: service_healthy
+
     nginx:
       extends:
         file: docker-compose-base.yml
