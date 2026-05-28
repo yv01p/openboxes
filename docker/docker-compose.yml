@@ -49,6 +49,8 @@ services:
           condition: service_healthy
         identity-service:
           condition: service_healthy
+        location-service:
+          condition: service_healthy
 
     db:
       image: mariadb:10
