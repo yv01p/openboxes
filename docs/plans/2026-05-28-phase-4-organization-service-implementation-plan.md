@@ -186,6 +186,11 @@ This task gates T2. If A28 or live-probe surfaces unexpected state, halt and sur
     sudo docker exec openboxes-db mariadb -u root -proot openboxes -e "SHOW COLUMNS FROM address"
     ```
   - Capture actual column names + types for T4 entity column annotations. Especially verify: `class` is VARCHAR(255) NOT NULL, `code`, `description`, `name`, `default_location_id`, `active` are present in `party` (single-table inheritance).
+  - Verify Grails `openboxes.identifier.organization.{minSize, maxSize}` config values via:
+    ```bash
+    grep -nE "openboxes\.identifier\.organization\.(min|max)Size" grails-app/conf/application.yml grails-app/conf/application.groovy 2>/dev/null
+    ```
+    Expected: returns the actual values used by Grails. If different from T2 Step 5's `minSize: 2, maxSize: 3`, update T2 application.yml before T2 commits. Plan-author guessed defaults; T1 must pin to actual.
 
 - [ ] **Step 2: A28 empirical verification — the T2 gate**
   ```bash
@@ -213,22 +218,14 @@ This task gates T2. If A28 or live-probe surfaces unexpected state, halt and sur
   ```
   Reference for T6 default-roles behavior (does Grails create() add any default PartyRoles?) + T7 response-shape baseline + T10 Playwright assertion fixtures.
 
-- [ ] **Step 4: Grails missing-controller behavior verification (gates T8)**
+- [ ] **Step 4: Grails missing-controller behavior verification (gates T8)** — non-intrusive probe via a known-non-existent controller URL that resolves through the same generic `/api/${resource}s` mapping:
   ```bash
-  # Temporarily rename OrganizationApiController to simulate the post-delete state:
-  mv grails-app/controllers/org/pih/warehouse/api/OrganizationApiController.groovy /tmp/oac-backup.groovy
-  cd docker && sudo docker-compose restart app  # Wait ~30s for Grails restart
-  sudo docker logs openboxes-app 2>&1 | grep -i "compilation" | head -5  # Should be empty (Grails compiles fine without OAC)
-
-  # Probe the URL:
-  curl -sI -b "obx_token=$TOKEN" http://localhost/api/organizations
-  # CAPTURE THE EXACT STATUS CODE. Expected: HTTP/1.1 404. If 500 or 502, halt — plan vassump #27 is wrong and T8's regression test #5 needs updating.
-
-  # Restore the controller:
-  mv /tmp/oac-backup.groovy grails-app/controllers/org/pih/warehouse/api/OrganizationApiController.groovy
-  cd docker && sudo docker-compose restart app
+  # Probe a clearly-non-existent controller (resolves to nonexistentResourceApi, which doesn't exist):
+  curl -sI -b "obx_token=$TOKEN" "http://localhost/api/nonexistentresources"
+  # CAPTURE THE EXACT STATUS CODE. Expected per FD#4: HTTP/1.1 404 (Grails returns 404 on unresolved controller dispatch).
+  # If 500 or anything else, halt — plan vassump #27 is wrong; T10 test #5 needs the actual code.
   ```
-  (This is intrusive — only do it once per phase; rollback is mandatory before any other Grails change. Captured response code drives T10 Playwright regression test #5 assertion.)
+  This verifies the framework's missing-controller behavior without touching any real source: no rename, no app restart, no rollback. The probed framework behavior is identical (same generic URL mapping, missing target controller class).
 
 - [ ] **Step 5: Verify A14 back-port: enumerate all Grails callers of `OrganizationService.findOrCreate*` / `createOrganization`**
   ```bash
@@ -240,7 +237,7 @@ This task gates T2. If A28 or live-probe surfaces unexpected state, halt and sur
   - All 30 plan-level assumptions reconfirmed (or drift surfaced).
   - A28 result: actual `SELECT DISTINCT class FROM party` output, plus pass/fail-against-FQCN-placeholder.
   - Live-probe response shapes (`/tmp/grails-organization-{list,read,create}.json`) captured.
-  - Grails missing-controller behavior: exact status code on `/api/organizations` post-rename.
+  - Grails missing-controller behavior: exact status code on `/api/nonexistentresources` (non-intrusive probe per Step 4).
   - Cross-context caller list with §7.1 delta for retro.
   - If any of these fail (A28 mismatch, missing-controller behavior not 404, baseline capture failure), halt + present to user before T2.
 
@@ -361,7 +358,7 @@ openboxes:
       maxSize: 3
 ```
 
-(Property values `minSize: 2`, `maxSize: 3` mirror Grails defaults — T1 audit Step 1 should verify the actual values from Grails `application.yml`/`application.groovy` and adjust if different. The Java port of `OrganizationIdentifierService` reads these via `@Value` in T6.)
+(Property values `minSize: 2`, `maxSize: 3` are plan-author defaults; T1 Step 1's identifier-config verification pins these to actual Grails values before T2 commits. The Java port of `OrganizationIdentifierService` reads these via `@Value` in T6.)
 
 - [ ] **Step 6: Add service block to `docker/docker-compose-base.yml`** (after location-service block, before nginx):
 ```yaml
@@ -735,6 +732,9 @@ import java.util.List;
 public interface OrganizationRepository extends JpaRepository<Organization, String> {
     long countByCode(String code);
 
+    @Query("SELECT o.code FROM Organization o WHERE o.code LIKE CONCAT(:prefix, '%')")
+    List<String> findCodesStartingWith(@Param("prefix") String prefix);
+
     @Query("SELECT DISTINCT o FROM Organization o LEFT JOIN o.roles r WHERE " +
            "(:q IS NULL OR LOWER(o.id) LIKE LOWER(CONCAT('%', :q, '%')) OR LOWER(o.code) LIKE LOWER(CONCAT('%', :q, '%')) OR LOWER(o.name) LIKE LOWER(CONCAT('%', :q, '%')) OR LOWER(o.description) LIKE LOWER(CONCAT('%', :q, '%'))) AND " +
            "(:active IS NULL OR o.active = :active) AND " +
@@ -1027,9 +1027,14 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-// import org.apache.commons.lang3.text.WordUtils;       // path (a)
-// import org.apache.commons.text.WordUtils;              // path (b)
-// (path (c): no import; inline initials())
+import java.util.Arrays;
+import java.util.stream.Collectors;
+
+// Path (a) alternative: add `implementation 'org.apache.commons:commons-lang3:3.14.0'` to build.gradle,
+//                       then `import org.apache.commons.lang3.text.WordUtils;` and replace `initials(sanitized)` below with `WordUtils.initials(sanitized)`.
+// Path (b) alternative: add `implementation 'org.apache.commons:commons-text:1.12.0'` to build.gradle,
+//                       then `import org.apache.commons.text.WordUtils;` and replace `initials(sanitized)` below with `WordUtils.initials(sanitized)`.
+// Default: path (c) — pure Java; no new dependency.
 
 @Service
 @Transactional
@@ -1072,7 +1077,7 @@ public class OrganizationIdentifierService {
             : name.split(",")[0].replaceAll("[^a-zA-Z0-9 ]", "");
         if (sanitized == null || sanitized.isBlank()) return null;
 
-        String initials = /* WordUtils.initials(sanitized) — path (a) or (b); or inline initials(sanitized) — path (c) */ "";
+        String initials = initials(sanitized);  // path (c) — swap for WordUtils.initials(sanitized) for path (a)/(b)
 
         String identifier;
         if (initials.length() == 1 || initials.length() < minSize) {
@@ -1087,21 +1092,30 @@ public class OrganizationIdentifierService {
         return identifier.toUpperCase();
     }
 
+    /** Path (c) — pure Java initials helper. Remove and import WordUtils for path (a)/(b). */
+    private static String initials(String s) {
+        return Arrays.stream(s.split("\\s+"))
+            .filter(w -> !w.isEmpty())
+            .map(w -> String.valueOf(w.charAt(0)))
+            .collect(Collectors.joining());
+    }
+
     private boolean idAlreadyExists(String id) {
         return repo.countByCode(id) > 0;
     }
 
     private String getIdentifierWithHighestSuffix(String prefix) {
-        // Query for codes matching the prefix, filter to digit-suffixed, return largest
-        // (mirrors Grails `like('code', prefix + '%')` + filter + sort).
-        // Implementation: add a method on OrganizationRepository OR inline JPQL here.
-        // For brevity (and to defer to T6 implementer):
-        return null;  // placeholder — implementer adds repo.findCodesStartingWith(prefix) + filter
+        // Mirrors Grails `like('code', prefix + '%')` + filter to digit-suffix + sort.
+        return repo.findCodesStartingWith(prefix).stream()
+            .filter(c -> !c.isEmpty() && Character.isDigit(c.charAt(c.length() - 1)))
+            .sorted()
+            .reduce((first, second) -> second)  // last element = largest digit-suffix
+            .orElse(null);
     }
 }
 ```
 
-(Implementer fills `getIdentifierWithHighestSuffix` body + picks path (a)/(b)/(c) for `WordUtils.initials`. T9 tests exercise the algorithm against the Grails-captured baseline at `/tmp/grails-organization-create.json`.)
+(T9 tests exercise the algorithm against the Grails-captured baseline at `/tmp/grails-organization-create.json`. To switch from path (c) to path (a)/(b), follow the comment block at the top of the file.)
 
 - [ ] **Step 4: Create `service/OrganizationService.java`** (Java port of Grails `OrganizationService.createOrganization` per plan vassump #9):
 ```java
@@ -1429,6 +1443,7 @@ git rm grails-app/controllers/org/pih/warehouse/api/OrganizationApiController.gr
 
 - [ ] **Step 4: Rebuild full stack + verify routing**
 ```bash
+./gradlew prepareDocker -Dgrails.env=prod  # rebuild Grails WAR so docker COPY picks up OrganizationApiController.groovy deletion
 cd docker && sudo docker-compose down && sudo docker-compose up -d --build
 # Wait for all 7 containers healthy:
 for i in {1..60}; do
@@ -1783,7 +1798,8 @@ Per spec §2 done state + Phase 3 done-gate cadence:
 - [ ] **Step 1: Clean rebuild from scratch**
 ```bash
 cd services && ./gradlew :organization-service:bootJar :location-service:bootJar :identity-service:bootJar :document-service:bootJar
-cd ../docker && sudo docker-compose down -v && sudo docker-compose up -d --build
+cd .. && ./gradlew prepareDocker -Dgrails.env=prod  # rebuild Grails WAR with OrganizationApiController.groovy deleted
+cd docker && sudo docker-compose down -v && sudo docker-compose up -d --build
 ```
 
 - [ ] **Step 2: Wait for 7 containers Up healthy**
