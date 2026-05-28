@@ -161,6 +161,8 @@ Notes:
 
 ### 5.2 `Organization extends Party`
 
+**Note (A28-pending):** the `@DiscriminatorValue` string below is a *provisional* FQCN. Neither Party.groovy nor Organization.groovy declares a `mapping { discriminator … }` override, so Grails GORM writes whatever Hibernate's default produces. Before T2 (bootstrap module) runs, T1's audit MUST execute `SELECT DISTINCT class FROM party` against a Grails-bootstrapped DB and pin this value (and the seed.sql snippet in §11.1) to the empirically observed string. See §17 A28.
+
 ```java
 @Entity
 @DiscriminatorValue("org.pih.warehouse.core.Organization")
@@ -177,8 +179,8 @@ public class Organization extends Party {
     @Column(name = "default_location_id", columnDefinition = "CHAR(38)")
     private String defaultLocationId;  // FK scalar — NOT @ManyToOne (Location lives in another service; Phase 3 read-only ownership)
 
-    @Column(columnDefinition = "BIT(1)")
-    private Boolean active;
+    @Column(nullable = false, columnDefinition = "BIT(1)")
+    private Boolean active = true;
     // getters/setters
 }
 ```
@@ -197,14 +199,14 @@ public class PartyRole {
     @Id @Column(columnDefinition = "CHAR(38)") private String id;
     @Version @Column(nullable = false) private Long version;
     @ManyToOne @JoinColumn(name = "party_id", nullable = false) private Party party;
-    @Enumerated(EnumType.STRING) @Column(name = "role_type", nullable = false, length = 255) private RoleTypeCode roleType;
+    @Column(name = "role_type", nullable = false, length = 255) private String roleType;
     @Column(name = "start_date") private Instant startDate;
     @Column(name = "end_date") private Instant endDate;
     // getters/setters
 }
 ```
 
-`RoleTypeCode` is a Java enum mirror of the Grails `RoleType` enum subset used for Party roles (e.g., `ROLE_SUPPLIER`, `ROLE_MANUFACTURER`, `ROLE_BUYER`, `ROLE_DISTRIBUTOR`). Mirror cost documented as a synchronization-debt risk in §14 (same pattern as Phase 3 `SupportedActivitiesEnum` mirror of `ActivityCode`).
+`PartyRole.roleType` is a raw `String` (not a JPA enum) — see §13 for rationale.
 
 ### 5.4 `PartyType`
 
@@ -322,7 +324,7 @@ All endpoints under `/api/organization/*` (singular — new prefix). All require
 }
 
 @Service public class PartyRoleService {
-    List<PartyRoleDto> findBy(String partyId, RoleTypeCode roleType);
+    List<PartyRoleDto> findBy(String partyId, String roleType);
 }
 
 @Service public class OrganizationIdentifierService {             // ported from Grails
@@ -464,7 +466,7 @@ r.add("spring.sql.init.mode", () -> "always");
 **`seed.sql`** seeds:
 - 1 PartyType row: code='ORG', party_type_code='ORGANIZATION' (mirrors Grails `changelog-2018-05-30-2315-insert-party-type-data.xml`)
 - 1 PartyType row: code='PERSON', party_type_code='PERSON' (for polymorphic test)
-- 3 Organization rows (class='org.pih.warehouse.core.Organization', party_type_id='ORG', different role_type sets)
+- 3 Organization rows (class='org.pih.warehouse.core.Organization', party_type_id='ORG', different role_type sets) *(class value pending A28 verification — placeholder above is the spec's provisional FQCN guess; replace with the observed `SELECT DISTINCT class FROM party` value before T9 implements)*
 - 1 bare Party row (class='org.pih.warehouse.core.Party', party_type_id='PERSON', for polymorphic Party-by-id test)
 - 2-3 PartyRole rows per organization (ROLE_SUPPLIER, ROLE_BUYER, etc.)
 - 1-2 Address rows (linked indirectly via organization if applicable)
@@ -510,7 +512,7 @@ No nested `.partyType.X` / `.roles[i].X` / `.locations[i].X` access. Flat-FK DTO
 - **Flat FK-only DTO is a behavior departure (FD#3)**. Consumers reading nested `partyType.code` / `roles[i].roleType.name` from Grails responses must accept flat shape from org-service. The 3 migrated React files don't navigate nested fields — verified at A13.
 - **PartyType IDs are hardcoded in Grails seed** (id=1 for 'ORG', id=2 for 'PERSON' at `changelog-2018-05-30-2315-insert-party-type-data.xml:10,27`). organization-service looks up PartyType by `code`, never by id (defensive against ID drift). Documented in §11.1 seed.sql block.
 - **`Organization.sequences` is NOT modeled** in JPA (YAGNI). The `organization_sequences` join table stays in the DB for Grails legacy reads.
-- **PartyRole `RoleTypeCode` Java enum is a mirror of Grails `RoleType`**. Synchronization debt — if Grails adds a new role type, org-service's enum must be updated in lock-step. Same pattern as Phase 3 `SupportedActivitiesEnum` mirroring `ActivityCode`. Mitigation: use `@Enumerated(EnumType.STRING)` directly — Hibernate throws on unknown values, surfacing the drift loudly at boot or first read. Matches Phase 3's `LocationTypeCode.valueOf(type)` pattern (RC-8: throws 500 on invalid input; cleanup deferred to Phase X API-wide error mapping).
+- **PartyRole `roleType` is a raw `String` column** (not a JPA enum). Rationale: Grails `RoleType` has 60+ values; mirroring as a subset enum + `@Enumerated(STRING)` + EAGER fetch on `Party.roles` would throw on first read of any stored value outside the subset. Raw String avoids the synchronization debt entirely. Trade-off: typos in `?roleType=` filter values silently return empty results instead of 400 (acceptable — consumers controlling the filter string already know the valid values; an unknown one returning [] is the same UX as a known one with no rows).
 
 ## 14. Risks
 
@@ -572,6 +574,7 @@ No nested `.partyType.X` / `.roles[i].X` / `.locations[i].X` access. Flat-FK DTO
 | A25 | No missing entity in core/ | ✅ confirmed | `ls grails-app/domain/org/pih/warehouse/core/` |
 | A26 | ddl-auto:validate tolerance | ✅ Phase 3 retro line 50 documents working pattern; reuse | Phase 3 retro |
 | A27 | PartyType has rows in seed | ✅ guarded `SELECT COUNT(*) FROM party_type WHERE code = 'ORG'` precondition + insert; id=1 hardcoded for ORG | `changelog-2018-05-30-2315-insert-party-type-data.xml:6,10,12` |
+| A28 | `party.class` discriminator value Grails writes (no GORM override in Party.groovy or Organization.groovy mapping blocks; default is Hibernate-implementation-dependent) | ⏳ PENDING T1 EMPIRICAL VERIFICATION | Run `SELECT DISTINCT class FROM party` against a Grails-bootstrapped DB; pin `@DiscriminatorValue` in §5.2 (and class= value in §11.1 seed.sql) to observed value. **Blocks T2.** |
 
 ## 18. Estimated effort
 
