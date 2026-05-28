@@ -1277,6 +1277,8 @@ class LocationServiceIntegrationTest {
         r.add("spring.datasource.password", mariadb::getPassword);
         r.add("openboxes.jwt.secret", () -> "test-secret-32-chars-minimum-for-hs256-key");
         r.add("spring.jpa.hibernate.ddl-auto", () -> "create");  // TestContainers gives empty DB; let JPA create schema
+        // create runs BEFORE data.sql by default; defer keeps the seed load until after Hibernate has emitted the schema.
+        r.add("spring.jpa.defer-datasource-initialization", () -> "true");
         r.add("spring.sql.init.data-locations", () -> "classpath:seed.sql");
         r.add("spring.sql.init.mode", () -> "always");  // override "embedded" default; runs against TestContainers MariaDB
     }
