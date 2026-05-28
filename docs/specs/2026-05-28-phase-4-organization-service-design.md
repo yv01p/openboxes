@@ -116,11 +116,14 @@ organization-service does not call any other Spring Boot service. It does NOT ca
 
 ### 5.1 `Party` (base)
 
+**Note (A28-pending):** the `@DiscriminatorValue` string below is a *provisional* FQCN, same status as §5.2's Organization placeholder. Concrete Party rows exist in the physical table (§11.1's polymorphic test fixture relies on one); without an explicit `@DiscriminatorValue`, JPA defaults to the entity simple name `"Party"`, which mismatches if Grails GORM wrote the FQCN. A28 pins this value (and §5.2's, and both `class=` values in §11.1) to the empirically observed string before T2.
+
 ```java
 @Entity
 @Table(name = "party")
 @Inheritance(strategy = InheritanceType.SINGLE_TABLE)
 @DiscriminatorColumn(name = "class", discriminatorType = DiscriminatorType.STRING, length = 255)
+@DiscriminatorValue("org.pih.warehouse.core.Party")  // A28-pending — same as §5.2
 public class Party {
     @Id
     @Column(columnDefinition = "CHAR(38)")
@@ -467,7 +470,7 @@ r.add("spring.sql.init.mode", () -> "always");
 - 1 PartyType row: code='ORG', party_type_code='ORGANIZATION' (mirrors Grails `changelog-2018-05-30-2315-insert-party-type-data.xml`)
 - 1 PartyType row: code='PERSON', party_type_code='PERSON' (for polymorphic test)
 - 3 Organization rows (class='org.pih.warehouse.core.Organization', party_type_id='ORG', different role_type sets) *(class value pending A28 verification — placeholder above is the spec's provisional FQCN guess; replace with the observed `SELECT DISTINCT class FROM party` value before T9 implements)*
-- 1 bare Party row (class='org.pih.warehouse.core.Party', party_type_id='PERSON', for polymorphic Party-by-id test)
+- 1 bare Party row (class='org.pih.warehouse.core.Party', party_type_id='PERSON', for polymorphic Party-by-id test) *(class value pending A28 verification — placeholder above is the spec's provisional FQCN guess; replace with the observed `SELECT DISTINCT class FROM party` value before T9 implements)*
 - 2-3 PartyRole rows per organization (ROLE_SUPPLIER, ROLE_BUYER, etc.)
 - 1-2 Address rows (linked indirectly via organization if applicable)
 
@@ -574,7 +577,7 @@ No nested `.partyType.X` / `.roles[i].X` / `.locations[i].X` access. Flat-FK DTO
 | A25 | No missing entity in core/ | ✅ confirmed | `ls grails-app/domain/org/pih/warehouse/core/` |
 | A26 | ddl-auto:validate tolerance | ✅ Phase 3 retro line 50 documents working pattern; reuse | Phase 3 retro |
 | A27 | PartyType has rows in seed | ✅ guarded `SELECT COUNT(*) FROM party_type WHERE code = 'ORG'` precondition + insert; id=1 hardcoded for ORG | `changelog-2018-05-30-2315-insert-party-type-data.xml:6,10,12` |
-| A28 | `party.class` discriminator value Grails writes (no GORM override in Party.groovy or Organization.groovy mapping blocks; default is Hibernate-implementation-dependent) | ⏳ PENDING T1 EMPIRICAL VERIFICATION | Run `SELECT DISTINCT class FROM party` against a Grails-bootstrapped DB; pin `@DiscriminatorValue` in §5.2 (and class= value in §11.1 seed.sql) to observed value. **Blocks T2.** |
+| A28 | `party.class` discriminator values Grails writes for BOTH bare Party and Organization rows (no GORM override in Party.groovy or Organization.groovy mapping blocks; default is Hibernate-implementation-dependent) | ⏳ PENDING T1 EMPIRICAL VERIFICATION | Run `SELECT DISTINCT class FROM party` against a Grails-bootstrapped DB; pin `@DiscriminatorValue` in **both §5.1 (Party) and §5.2 (Organization)**, and both `class=` values in **§11.1 seed.sql (lines 469 and 470)**, to the observed values. **Blocks T2.** |
 
 ## 18. Estimated effort
 
