@@ -25,7 +25,7 @@ public class LocationType {
     @Column(name = "sort_order")
     private Integer sortOrder;
 
-    @ElementCollection
+    @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(
         name = "location_type_supported_activities",
         joinColumns = @JoinColumn(name = "location_type_id"))
