@@ -14,7 +14,8 @@ spring:
     properties:
       hibernate.dialect: org.hibernate.dialect.MariaDBDialect
   liquibase:
-    enabled: false  # T3 enables this + adds change-log: classpath:db/changelog/db.changelog-master.xml once changelog file exists
+    enabled: true
+    change-log: classpath:db/changelog/db.changelog-master.xml
 management:
   endpoints:
     web:

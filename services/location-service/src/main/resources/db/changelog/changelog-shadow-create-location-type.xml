@@ -1,0 +1,18 @@
+<?xml version="1.1" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                       https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.20.xsd"
+                   logicalFilePath="services/location-service/db/changelog/changelog-shadow-create-location-type.xml">
+    <changeSet id="phase3-shadow-create-location-type" author="openboxes-location">
+        <preConditions onFail="MARK_RAN" onFailMessage="location_type table not found — Grails Liquibase must run first">
+            <tableExists tableName="location_type"/>
+        </preConditions>
+        <comment>
+            Shadow for location_type table. Grails Liquibase owns table creation.
+            location-service uses spring.jpa.hibernate.ddl-auto=validate to prove entity-mapping correctness.
+            tableExists works for both entity tables and pure M:N join tables (which have no `id` column).
+        </comment>
+        <!-- No body: table already exists per the precondition. -->
+    </changeSet>
+</databaseChangeLog>
