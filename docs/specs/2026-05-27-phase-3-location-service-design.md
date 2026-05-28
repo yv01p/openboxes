@@ -35,7 +35,7 @@ Phase 3 stands up `location-service` as a new Spring Boot 3.x / Java 21 module e
 - `/api/internalLocations/*` (bin/zone REST surface) — stays on Grails
 - All Location/LocationGroup/LocationType WRITE paths — stay on Grails (see §13)
 
-**Done-state, one paragraph**: location-service runs in compose as the 6th container; validates obx_token cookies via shared HMAC HS256 secret; serves `/api/location/{id}`, `/api/location?type=...`, `/api/location/group/{id}`, `/api/location/group`, `/api/location/type`, `/api/location/type/{id}`, `/api/location/supportedActivities` GETs; bins/zones filtered out of GET responses by default. nginx routes `/api/location/` (singular) to location-service. `/api/locations/` (plural) and `/api/internalLocations/` continue routing to Grails app unchanged. Grails Location.groovy stays alive as both read and write. Tagged `phase-3-location` on `main`.
+**Done-state, one paragraph**: location-service runs in compose as the 6th container; validates obx_token cookies via shared HMAC HS256 secret; serves `/api/location/{id}`, `/api/location?type=...`, `/api/location/group/{id}`, `/api/location/group`, `/api/location/type`, `/api/location/type/{id}`, `/api/location/supportedActivities` GETs; internal locations (BIN_LOCATION/INTERNAL) filtered out of GET responses by default; ZONE locations pass through (Grails parity). nginx routes `/api/location/` (singular) to location-service. `/api/locations/` (plural) and `/api/internalLocations/` continue routing to Grails app unchanged. Grails Location.groovy stays alive as both read and write. Tagged `phase-3-location` on `main`.
 
 ## 2. Service Architecture
 
@@ -49,7 +49,7 @@ Phase 3 stands up `location-service` as a new Spring Boot 3.x / Java 21 module e
 | `depends_on` | `db: service_healthy` + `app: service_healthy` (Grails Liquibase finishes first per Phase 2 BP-2 lesson) |
 | nginx `depends_on` | adds `location-service: service_healthy` |
 | Healthcheck | Spring Boot Actuator `/actuator/health` (3-attempt curl loop, like identity-service) |
-| Schema migrations | Per-service Liquibase under `services/location-service/src/main/resources/db/changelog/`; shadow pattern (`columnExists` precondition + empty body) from commit 1 per Phase 2 retro lesson #5 |
+| Schema migrations | Per-service Liquibase under `services/location-service/src/main/resources/db/changelog/`; shadow pattern (`tableExists` precondition + empty body) from commit 1 per Phase 2 retro lesson #5 (template at §4) |
 | Auth | jjwt 0.12+; `JwtCookieAuthFilter` duplicated from document-service / identity-service (Phase X DRY refactor candidate) |
 | API contract | springdoc-openapi at `/v3/api-docs` |
 | Testing | JUnit 5 + TestContainers MariaDB (mirror identity-service test setup) |
