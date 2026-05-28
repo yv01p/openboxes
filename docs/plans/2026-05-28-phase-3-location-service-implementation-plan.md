@@ -634,8 +634,16 @@ public interface LocationRepository extends JpaRepository<Location, String> {
     @Query("SELECT l FROM Location l WHERE l.id = :id AND l.locationType.locationTypeCode NOT IN :internalTypes")
     Optional<Location> findByIdExcludingInternal(@Param("id") String id, @Param("internalTypes") Set<LocationTypeCode> internalTypes);
 
-    @Query("SELECT l FROM Location l WHERE l.locationType.locationTypeCode NOT IN :internalTypes AND (:active IS NULL OR l.active = :active)")
-    List<Location> findAllExcludingInternal(@Param("internalTypes") Set<LocationTypeCode> internalTypes, @Param("active") Boolean active);
+    @Query("SELECT l FROM Location l WHERE " +
+           "(:type IS NULL OR l.locationType.locationTypeCode = :type) AND " +
+           "(:parentId IS NULL OR l.parentLocationId = :parentId) AND " +
+           "(:active IS NULL OR l.active = :active) AND " +
+           "(:includeInternal = TRUE OR l.locationType.locationTypeCode NOT IN :internalTypes)")
+    List<Location> findFiltered(@Param("type") LocationTypeCode type,
+                                @Param("parentId") String parentId,
+                                @Param("active") Boolean active,
+                                @Param("includeInternal") boolean includeInternal,
+                                @Param("internalTypes") Set<LocationTypeCode> internalTypes);
 }
 
 // LocationGroupRepository.java
@@ -807,9 +815,9 @@ cd ../docker && sudo docker-compose up -d --build location-service
 # Anonymous health check passes:
 sudo docker exec openboxes-location-service curl -sf localhost:8083/actuator/health
 # Expected: {"status":"UP"}
-# Anonymous protected endpoint fails (will 401 once T7 controllers exist; for now 404):
+# Anonymous protected endpoint returns 401 (Spring Security rejects before dispatcher):
 sudo docker exec openboxes-location-service curl -sI localhost:8083/api/location/anything
-# Expected: HTTP/1.1 404 (no controllers yet)
+# Expected: HTTP/1.1 401 (security filter chain runs before DispatcherServlet; this holds whether or not a controller mapping exists for /api/location/anything)
 ```
 
 - [ ] **Step 5: Commit**
@@ -998,6 +1006,7 @@ package org.openboxes.location.controller;
 
 import org.openboxes.location.dto.LocationDto;
 import org.openboxes.location.entity.Location;
+import org.openboxes.location.enums.LocationTypeCode;
 import org.openboxes.location.enums.SupportedActivitiesEnum;
 import org.openboxes.location.repository.LocationRepository;
 import org.openboxes.location.service.LocationFilterService;
@@ -1028,12 +1037,13 @@ public class LocationController {
     }
 
     @GetMapping
-    public List<LocationDto> list(@RequestParam(required = false) Boolean active,
+    public List<LocationDto> list(@RequestParam(required = false) String type,
+                                  @RequestParam(required = false) Boolean active,
+                                  @RequestParam(required = false) String parentId,
                                   @RequestParam(defaultValue = "false") boolean includeInternal) {
-        List<Location> rows = includeInternal
-            ? (active == null ? repo.findAll() : repo.findAll().stream().filter(l -> active.equals(l.getActive())).toList())
-            : repo.findAllExcludingInternal(filter.internalTypeCodes(), active);
-        return rows.stream().map(LocationDto::from).toList();
+        LocationTypeCode typeFilter = (type == null || type.isBlank()) ? null : LocationTypeCode.valueOf(type);
+        return repo.findFiltered(typeFilter, parentId, active, includeInternal, filter.internalTypeCodes())
+                   .stream().map(LocationDto::from).toList();
     }
 
     @GetMapping("/supportedActivities")
@@ -1142,7 +1152,7 @@ git commit -m "phase 3 task 7: REST controllers (3 controllers; 7 GET endpoints)
 - [ ] **Step 1: Add nginx location block** (`docker/nginx/conf.d/app.conf`) BEFORE the `/api/` catch-all at line 25. The trailing slash on `/api/location/` is MANDATORY to avoid collision with `/api/locations/x` (see verified-assumption #21 — do NOT remove the trailing slash to match the `/api/identity` + `/api/documents` no-trailing-slash style):
 ```nginx
     location /api/location/ {
-        proxy_pass http://location-service:8083/;
+        proxy_pass http://location-service:8083;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header Cookie $http_cookie;
@@ -1243,7 +1253,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.context.jdbc.Sql;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.testcontainers.containers.MariaDBContainer;
@@ -1256,7 +1265,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @Testcontainers
-@Sql({"/seed.sql"})
 class LocationServiceIntegrationTest {
 
     @Container
@@ -1269,6 +1277,8 @@ class LocationServiceIntegrationTest {
         r.add("spring.datasource.password", mariadb::getPassword);
         r.add("openboxes.jwt.secret", () -> "test-secret-32-chars-minimum-for-hs256-key");
         r.add("spring.jpa.hibernate.ddl-auto", () -> "create");  // TestContainers gives empty DB; let JPA create schema
+        r.add("spring.sql.init.data-locations", () -> "classpath:seed.sql");
+        r.add("spring.sql.init.mode", () -> "always");  // override "embedded" default; runs against TestContainers MariaDB
     }
 
     @Autowired MockMvc mvc;
