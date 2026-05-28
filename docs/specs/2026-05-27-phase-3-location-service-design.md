@@ -68,13 +68,13 @@ All endpoints under `/api/location/*` (singular — new prefix, NOT `/api/locati
 
 | Endpoint | Purpose | Filters |
 |---|---|---|
-| `GET /api/location/{id}` | Read location by id | Returns 404 if id is a bin/zone (LocationType.locationTypeCode in BIN_LOCATION/ZONE/INTERNAL) unless `?includeInternal=true` query param |
-| `GET /api/location?type={typeCode}&active=true&parentId={id}` | Filtered list | Bins/zones excluded by default; `&includeInternal=true` to include |
+| `GET /api/location/{id}` | Read location by id | Returns 404 if id is an internal location (LocationType.locationTypeCode in BIN_LOCATION/INTERNAL, per Grails `LocationTypeCode.listInternalTypeCodes()`) unless `?includeInternal=true` query param. ZONE locations are NOT filtered (Grails parity). |
+| `GET /api/location?type={typeCode}&active=true&parentId={id}` | Filtered list | Internal locations (BIN_LOCATION/INTERNAL) excluded by default; `&includeInternal=true` to include. ZONE locations not filtered. |
 | `GET /api/location/group/{id}` | Read group by id | — |
 | `GET /api/location/group` | List groups | — |
 | `GET /api/location/type` | List all LocationTypes | Served from LocationTypeCache |
 | `GET /api/location/type/{id}` | Read type by id | Served from LocationTypeCache |
-| `GET /api/location/supportedActivities` | List all supported-activity codes | Served from SupportedActivitiesCache |
+| `GET /api/location/supportedActivities` | List all supported-activity codes | Served from SupportedActivitiesEnum (hardcoded enum mirror of Grails ActivityCode) |
 | `GET /actuator/health` | Healthcheck (anonymous) | — |
 | `GET /v3/api-docs` | OpenAPI spec (anonymous) | — |
 
@@ -105,11 +105,12 @@ Each follows the document-service shadow pattern:
 ```xml
 <changeSet id="phase3-shadow-create-X" author="openboxes-location">
     <preConditions onFail="MARK_RAN" onFailMessage="X table not found — Grails Liquibase must run first">
-        <columnExists tableName="X" columnName="id"/>
+        <tableExists tableName="X"/>
     </preConditions>
     <comment>
-        Shadow for X entity. Grails Liquibase owns table creation.
+        Shadow for X table. Grails Liquibase owns table creation.
         location-service uses spring.jpa.hibernate.ddl-auto=validate to prove entity-mapping correctness.
+        tableExists works for both entity tables and pure M:N join tables (which have no `id` column).
     </comment>
     <!-- No body: table already exists per the precondition. -->
 </changeSet>
@@ -122,7 +123,8 @@ Each follows the document-service shadow pattern:
 - JWT obx_token cookie validated via shared HMAC HS256 secret (`OPENBOXES_JWT_SECRET` env var, already wired in `docker-compose-base.yml` per Phase 2)
 - `JwtCookieAuthFilter` copied from identity-service (Phase 3 mirrors the existing duplication; carry-forward in retrospective for Phase X DRY refactor)
 - `/actuator/health` + `/v3/api-docs` anonymous-passthrough
-- All other endpoints require valid token; no role-based authorization needed (read-only endpoints; any authenticated user can read location data, matching current Grails LocationApiController behavior)
+- All other endpoints require valid token; no role-based authorization in location-service (read-only endpoints; any authenticated user can read all non-internal location data)
+- Note on Grails parity: this matches Grails `LocationApiController.read()` (single-id GET at `grails-app/controllers/org/pih/warehouse/api/LocationApiController.groovy:42-45`), but Grails `LocationApiController.list()` at lines 73-92 performs role-based result filtering (driven by `params.locationChooser`, `userService.isUserRequestor()`, and `currentUser.locationRoles`) that location-service does NOT replicate. Phase 4+ list callers via `/api/location?...` will see unfiltered results. If any consumer migrates from `/api/locations/...` list and depends on the filtered shape, surface it in the Phase X retro before that migration.
 - Anonymous-user fallback NOT supported (matches identity-service pattern)
 
 ## 6. Caching
@@ -132,8 +134,10 @@ Each follows the document-service shadow pattern:
   - `getById(id)`: cache hit OR call `refresh()` then retry
   - Used by `GET /api/location/type/*` endpoints AND internally by `Location` DTO assembly when serializing `location.locationType.name` etc.
   - Single-node safe (no distributed cache complexity)
-- **SupportedActivitiesCache** (same pattern; small `Set<String>` of activity code values)
+- **SupportedActivitiesEnum** (hardcoded Java enum mirroring Grails `ActivityCode` at `src/main/groovy/org/pih/warehouse/core/ActivityCode.groovy`, 31 values)
+  - No DB query; values returned directly from enum reflection (same pattern as Grails `LocationApiController.supportedActivities()` at `grails-app/controllers/org/pih/warehouse/api/LocationApiController.groovy:144-147`)
   - Used by `GET /api/location/supportedActivities`
+  - Synchronization debt: if Grails adds an ActivityCode value, location-service's enum must be updated in lock-step (see §15)
 - **LocationGroup NOT cached** (admin-managed; can grow; queried filtered — direct repo lookups)
 
 ## 7. Cross-Service Interactions
@@ -175,11 +179,12 @@ location /api/location/ {
 
 Consolidation deferred to Phase X (when React migrates to /api/location/ and Grails LocationApiController is deleted).
 
-## 9. Bin/Zone Filtering at Application Layer
+## 9. Internal-Location Filtering at Application Layer
 
 Bins and zones are rows in the SAME `location` table, distinguished by `LocationType.locationTypeCode`:
 - Real locations: `DEPOT`, `WAREHOUSE`, `SUPPLIER`, `CUSTOMER`, `PHARMACY`, etc.
-- Bins/zones (internal): `BIN_LOCATION`, `ZONE`, `INTERNAL`, etc. (exact codes verified during T1 audit at plan time; reference `LocationTypeCode.listInternalTypeCodes()` in Grails source)
+- Internal locations: `BIN_LOCATION`, `INTERNAL` (per Grails `LocationTypeCode.listInternalTypeCodes()` at `src/main/groovy/org/pih/warehouse/core/LocationTypeCode.groovy:55-57`) — filtered by default
+- ZONE locations: NOT in the internal filter set (Grails parity — `Location.listNonInternalLocations()` at `grails-app/domain/org/pih/warehouse/core/Location.groovy:368-378` returns zones; preserving drop-in behavior)
 
 location-service's `LocationRepository` adds a JPA criterion to filter out internal types by default:
 ```java
@@ -197,11 +202,11 @@ The list of internal type codes is sourced from a Java enum in location-service 
 
 1. `GET /api/location/{id}` returns 200 with payload for existing location
 2. `GET /api/location/{id}` returns 404 for non-existent id
-3. `GET /api/location/{id}` returns 404 for bin/zone id (default filter)
-4. `GET /api/location/{id}?includeInternal=true` returns 200 for bin/zone id
+3. `GET /api/location/{id}` returns 404 for internal-location (BIN_LOCATION/INTERNAL) id (default filter)
+4. `GET /api/location/{id}?includeInternal=true` returns 200 for internal-location (BIN_LOCATION/INTERNAL) id
 5. `GET /api/location?type=DEPOT` returns matching locations only
 6. `GET /api/location?active=false` returns inactive locations
-7. `GET /api/location` returns no bins/zones by default
+7. `GET /api/location` returns no internal locations (BIN_LOCATION/INTERNAL) by default; ZONE locations still included (Grails parity)
 8. `GET /api/location/group/{id}` returns 200 with payload
 9. `GET /api/location/group` returns list
 10. `GET /api/location/type` returns all types from cache
@@ -300,6 +305,7 @@ Phase X picks up Grails Location.groovy + related deletion once these blockers a
 - **identity-service still maps Location as a JPA entity** against the shared DB. After Phase 3, identity-service's Location.java entity coexists with location-service's Location.java entity, both mapping the same table. Schema changes require updating BOTH entities in lock-step. Phase 2 → Phase 3 accepts this debt; Phase X resolves.
 - **JwtCookieAuthFilter is duplicated.** Now in 3 services (document, identity, location). DRY violation deferred to Phase X.
 - **Internal-type-code list duplicated.** location-service's enum of bin/zone codes mirrors Grails `LocationTypeCode.listInternalTypeCodes()`. If Grails adds a new internal type, location-service's enum must be updated; mitigated by retrospective documentation + future test that exercises both lists.
+- **ActivityCode enum duplicated.** location-service's `SupportedActivitiesEnum` mirrors Grails `ActivityCode` enum (31 values at `src/main/groovy/org/pih/warehouse/core/ActivityCode.groovy`). If Grails adds a new activity code, location-service's enum must be updated in lock-step; mitigated by retrospective documentation + future test that exercises both lists. Same pattern as the LocationTypeCode debt above.
 - **Parent design enumerated LocationStatus** (entity + table) that doesn't exist. Spec deviation noted in retrospective for parent design correction.
 - **No saga infrastructure.** Parent design's saga support arrives in Phase 7+. Phase 3 (read-only) doesn't need it; Phase X (write decoupling) does.
 
