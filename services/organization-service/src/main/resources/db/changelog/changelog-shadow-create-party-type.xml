@@ -3,7 +3,7 @@
                    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
                        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.20.xsd"
-                   logicalFilePath="services/organization-service/db/changelog/changelog-shadow-create-party_type.xml">
+                   logicalFilePath="services/organization-service/db/changelog/changelog-shadow-create-party-type.xml">
     <changeSet id="phase4-shadow-create-party_type" author="openboxes-organization">
         <preConditions onFail="MARK_RAN" onFailMessage="party_type table not found — Grails Liquibase must run first">
             <tableExists tableName="party_type"/>
