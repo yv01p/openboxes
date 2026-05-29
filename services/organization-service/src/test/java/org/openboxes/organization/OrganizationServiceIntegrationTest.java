@@ -169,7 +169,7 @@ class OrganizationServiceIntegrationTest {
             .andExpect(jsonPath("$.data.length()").value(2));
     }
 
-    @Test void partyTypeCache_refreshOnEmptyList() throws Exception {
+    @Test void partyTypeCache_refreshOnInitiallyEmptyCacheAndCacheResultsOnceSeeded() throws Exception {
         // RC-6 fix verification: manually refresh cache to ensure it's populated from seed.sql
         // since @PostConstruct runs before seed.sql in test context
         cache.refresh();

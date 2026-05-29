@@ -27,6 +27,5 @@ public class PartyRole {
     public String getRoleType() { return roleType; }
     public void setRoleType(String roleType) { this.roleType = roleType; }
     public Instant getStartDate() { return startDate; }
-    public void setEndDate(Instant endDate) { this.endDate = endDate; }
     public Instant getEndDate() { return endDate; }
 }

@@ -1,7 +1,6 @@
 package org.openboxes.organization.service;
 
 import org.openboxes.organization.dto.PartyDto;
-import org.openboxes.organization.entity.Party;
 import org.openboxes.organization.repository.PartyRepository;
 import org.springframework.stereotype.Service;
 import java.util.Optional;

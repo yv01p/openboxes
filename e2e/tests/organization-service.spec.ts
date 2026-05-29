@@ -55,7 +55,7 @@ test.describe('organization-service via nginx', () => {
         expect(res.status()).toBe(404);
     });
 
-    test('baseline preservation: Phase 1+2+3 endpoints still work', async ({ request }) => {
+    test('smoke: Phase 2 /api/identity/me + Phase 3 /api/location/type still respond 200', async ({ request }) => {
         const cookie = await login(request);
         const me = await request.get(`${BASE}/api/identity/me`, { headers: { Cookie: cookie } });
         expect(me.status()).toBe(200);
