@@ -1,0 +1,29 @@
+server:
+  port: 8084
+spring:
+  application:
+    name: organization-service
+  datasource:
+    url: ${DATASOURCE_URL}
+    username: ${DATASOURCE_USERNAME}
+    password: ${DATASOURCE_PASSWORD}
+    driver-class-name: org.mariadb.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate.dialect: org.hibernate.dialect.MariaDBDialect
+  liquibase:
+    enabled: false  # flipped to true in T3 after shadow changelogs are created
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+openboxes:
+  jwt:
+    secret: ${OPENBOXES_JWT_SECRET}
+  identifier:
+    organization:
+      minSize: 2
+      maxSize: 3

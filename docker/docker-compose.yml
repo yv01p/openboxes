@@ -38,6 +38,16 @@ services:
         app:
           condition: service_healthy
 
+    organization-service:
+      extends:
+        file: docker-compose-base.yml
+        service: organization-service
+      depends_on:
+        db:
+          condition: service_healthy
+        app:
+          condition: service_healthy
+
     nginx:
       extends:
         file: docker-compose-base.yml
