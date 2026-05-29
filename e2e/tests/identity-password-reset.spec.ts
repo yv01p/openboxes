@@ -76,6 +76,8 @@ test.describe.serial('identity-service password reset', () => {
     });
     expect([200, 302]).toContain(resetRes.status());
 
+    // Intentionally inline (not e2e/fixtures/auth.ts) — tests login with NEW_PWD post-reset,
+    // which the shared fixture's default-credential signature can't express.
     const loginRes = await request.post('/api/identity/login', {
       data: { username: USER, password: NEW_PWD },
       headers: { 'Content-Type': 'application/json' },

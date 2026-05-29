@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { login } from '../fixtures/auth';
 
 // Task 17 Step 8: caller regression — broad smoke through Grails-served pages that read
 // `session.user`. Each must return HTTP 200; the SecurityInterceptor would redirect/500
@@ -12,14 +13,7 @@ import { test, expect } from '@playwright/test';
 
 test.describe('identity-service caller regression — Grails session.user wiring', () => {
   test.beforeEach(async ({ request }) => {
-    const loginRes = await request.post('/api/identity/login', {
-      data: {
-        username: process.env.E2E_USER || 'admin',
-        password: process.env.E2E_PASSWORD || 'password',
-      },
-      headers: { 'Content-Type': 'application/json' },
-    });
-    expect(loginRes.status()).toBe(200);
+    await login(request);
     const chooseRes = await request.put(`/api/identity/chooseLocation/${process.env.E2E_LOCATION_ID || '1'}`);
     expect(chooseRes.status()).toBe(200);
   });

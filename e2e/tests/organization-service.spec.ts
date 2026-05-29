@@ -1,16 +1,7 @@
 import { test, expect } from '@playwright/test';
+import { login } from '../fixtures/auth';
 
 const BASE = process.env.BASE_URL ?? 'http://localhost';
-const USER = process.env.E2E_USER ?? 'admin';
-const PASS = process.env.E2E_PASSWORD ?? 'password';
-
-async function login(request: any) {
-    const res = await request.post(`${BASE}/api/identity/login`, {
-        data: { username: USER, password: PASS },
-    });
-    expect(res.ok()).toBeTruthy();
-    return res.headers()['set-cookie'];
-}
 
 test.describe('organization-service via nginx', () => {
     test('GET /api/organization (list) returns 200 with {data: [...]}', async ({ request }) => {
