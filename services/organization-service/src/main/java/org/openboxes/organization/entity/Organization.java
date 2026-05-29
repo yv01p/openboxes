@@ -6,10 +6,10 @@ import jakarta.persistence.*;
 @DiscriminatorValue("org.pih.warehouse.core.Organization")
 public class Organization extends Party {
 
-    @Column(nullable = false, length = 255)
+    @Column(length = 255)
     private String code;
 
-    @Column(nullable = false, length = 255)
+    @Column(length = 255)
     private String name;
 
     @Column(length = 255)
@@ -18,7 +18,7 @@ public class Organization extends Party {
     @Column(name = "default_location_id", columnDefinition = "CHAR(38)")
     private String defaultLocationId;
 
-    @Column(nullable = false, columnDefinition = "BIT(1)")
+    @Column(columnDefinition = "BIT(1)")
     private Boolean active = true;
 
     public String getCode() { return code; }

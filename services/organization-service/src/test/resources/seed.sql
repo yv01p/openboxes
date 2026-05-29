@@ -10,10 +10,8 @@ INSERT INTO party (id, version, class, party_type_id, code, name, description, a
     ('org-inactive', 0, 'org.pih.warehouse.core.Organization', 'pt-org-001', 'INA', 'Inactive Co', 'Inactive test org', 0, NOW(), NOW());
 
 -- 1 bare Party row for polymorphic test (FQCN per A28)
--- WORKAROUND: Organization fields have `nullable = false` in entity but apply to subclass only
--- SINGLE_TABLE DDL generates NOT NULL constraints, so we provide dummy values for base Party row
-INSERT INTO party (id, version, class, party_type_id, code, name, active, date_created, last_updated) VALUES
-    ('party-bare', 0, 'org.pih.warehouse.core.Party', 'pt-prs-001', '', '', 0, NOW(), NOW());
+INSERT INTO party (id, version, class, party_type_id, date_created, last_updated) VALUES
+    ('party-bare', 0, 'org.pih.warehouse.core.Party', 'pt-prs-001', NOW(), NOW());
 
 -- PartyRole rows (raw string roleType per CDR R1 §2.1)
 INSERT INTO party_role (id, version, party_id, role_type) VALUES
