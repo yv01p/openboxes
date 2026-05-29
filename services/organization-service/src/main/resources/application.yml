@@ -14,7 +14,8 @@ spring:
     properties:
       hibernate.dialect: org.hibernate.dialect.MariaDBDialect
   liquibase:
-    enabled: false  # flipped to true in T3 after shadow changelogs are created
+    enabled: true
+    change-log: classpath:db/changelog/db.changelog-master.xml
 management:
   endpoints:
     web:

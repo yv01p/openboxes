@@ -1,0 +1,18 @@
+<?xml version="1.1" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                       https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.20.xsd"
+                   logicalFilePath="services/organization-service/db/changelog/changelog-shadow-create-party_role.xml">
+    <changeSet id="phase4-shadow-create-party_role" author="openboxes-organization">
+        <preConditions onFail="MARK_RAN" onFailMessage="party_role table not found — Grails Liquibase must run first">
+            <tableExists tableName="party_role"/>
+        </preConditions>
+        <comment>
+            Shadow for party_role table. Grails Liquibase owns table creation.
+            organization-service uses spring.jpa.hibernate.ddl-auto=validate to prove entity-mapping correctness.
+            For party table specifically: SINGLE_TABLE inheritance per A4 — Organization columns live alongside Party columns.
+        </comment>
+        <!-- No body: table already exists per the precondition. -->
+    </changeSet>
+</databaseChangeLog>
