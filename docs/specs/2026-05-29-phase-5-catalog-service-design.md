@@ -8,13 +8,13 @@
 
 ## 1. TL;DR
 
-Phase 5 stands up `catalog-service` as a new Spring Boot 3.x / Java 21 module that owns the React-facing HTTP surface for **8 catalog reference-data entities** (Category, UnitOfMeasure, UnitOfMeasureClass, Tag, Synonym, ProductType, Attribute, ProductGroup) plus **Product as read-only** (no React POST/PUT/DELETE for Product today — verified via `src/js/api/services/ProductApi.js` enumeration). Partial-strangler per Phase 4 FD#1 pattern, but **shape varies by entity tier**: the 8 reference entities follow Phase 4's full partial-strangler (GET + React-facing writes where they exist in `src/js/api/services/`); Product follows Phase 3 location-service read-only shape. 5th copy of `JwtCookieAuthFilter` + `JwtService` + `SecurityConfig` from organization-service's `security/` package; `jwt-auth-common` extraction deferred to Phase 5.1 per FD#6. nginx singular URL pattern carried forward from Phase 4 FD#4 — but **`ProductApiController.groovy` stays alive** because it's a god-controller hosting cross-context queries (demand forecasting via `forecastingService`, `productSummary` view, `productAvailability` inventory data) that cannot migrate to catalog-service. Some smaller catalog `*ApiController` files MAY be deletable; T1 audit decides per-controller. **13 entities deferred** to either Phase 5.5 (ProductSupplier+variants, ProductPackage+Price, ProductCatalog+Item, ProductAssociation, ProductComponent, ProductAttribute, UoMConversion) or their natural owning phase (ProductAvailability→Phase 6 inventory, ProductMergeLogger→Phase 6 with merge, ProductSummary→Phase 11 reporting or never since it's a SQL view backed by inventory + ordering tables). Tag `phase-5-catalog` on `main`.
+Phase 5 stands up `catalog-service` as a new Spring Boot 3.x / Java 21 module that owns the React-facing HTTP surface for **8 catalog reference-data entities** (Category, UnitOfMeasure, UnitOfMeasureClass, Tag, Synonym, ProductType, Attribute, ProductGroup) plus **Product as read-only** (no React POST/PUT/DELETE for Product today — verified via `src/js/api/services/ProductApi.js` enumeration). Partial-strangler per Phase 4 FD#1 pattern, but **per-entity write scope is T1-determined** (default GET-only for the 8 reference entities; POST/PUT/DELETE added only for (entity, verb) pairs T1 audit finds callers for under the expanded enumeration scope — all `src/js/**/*.{js,jsx,ts,tsx}` for inline `/api/*` strings + every action of each catalog-area `*ApiController.groovy`); Product follows Phase 3 location-service read-only shape. 5th copy of `JwtCookieAuthFilter` + `JwtService` + `SecurityConfig` from organization-service's `security/` package; `jwt-auth-common` extraction deferred to Phase 5.1 per FD#6. nginx singular URL pattern carried forward from Phase 4 FD#4 — but **`ProductApiController.groovy` stays alive** because it's a god-controller hosting cross-context queries (demand forecasting via `forecastingService`, `productSummary` view, `productAvailability` inventory data) that cannot migrate to catalog-service. Some smaller catalog `*ApiController` files MAY be deletable; T1 audit decides per-controller. **13 entities deferred** to either Phase 5.5 (ProductSupplier+variants, ProductPackage+Price, ProductCatalog+Item, ProductAssociation, ProductComponent, ProductAttribute, UoMConversion) or their natural owning phase (ProductAvailability→Phase 6 inventory, ProductMergeLogger→Phase 6 with merge, ProductSummary→Phase 11 reporting or never since it's a SQL view backed by inventory + ordering tables). Tag `phase-5-catalog` on `main`.
 
 ## 2. Done state (one paragraph)
 
 `catalog-service` runs in compose as the 8th container at port 8085 (`expose:` only, NOT `ports:` — mirrors organization-service:8084 pattern); validates `obx_token` cookies via shared HMAC HS256 secret (5th copy of the JWT triple); serves:
 
-- **Reference data with writes (where React calls)**: `GET/POST/PUT/DELETE /api/category{,/{id}}`, `GET/POST/PUT/DELETE /api/tag{,/{id}}`, `GET/POST/PUT/DELETE /api/synonym{,/{id}}?productId=`, `GET/POST/PUT/DELETE /api/productGroup{,/{id}}` (exact write surface confirmed per-entity at T1 audit by reading `src/js/api/services/*Api.js` files)
+- **Reference data with writes (only where T1 audit confirms callers)**: per-entity write scope determined by T1 audit's expanded enumeration (all `src/js/**/*.{js,jsx,ts,tsx}` for inline `/api/*` strings + every action of each catalog-area `*ApiController.groovy`). Default GET-only for Category, Tag, Synonym, ProductGroup. POST/PUT/DELETE added only for (entity, verb) pairs T1 finds callers for. Final endpoint listing produced at T1 audit completion.
 - **Reference data read-only** (no React writes today): `GET /api/unitOfMeasure{,/{id}}`, `GET /api/unitOfMeasureClass{,/{id}}`, `GET /api/productType{,/{id}}`, `GET /api/attribute{,/{id}}`
 - **Product read-only**: `GET /api/product/{id}`, `GET /api/product` filtered list, plus the subset of Product reads that don't depend on inventory data (e.g., `getLatestInventoryCountDate`, `lotNumbersWithExpirationDate`, `availableItems` — T1 audit confirms exact split between catalog-side reads and inventory-dependent reads that stay in Grails `ProductApiController`)
 
@@ -24,7 +24,7 @@ Flat FK-only DTOs per FD#3 (`CategoryDto.parentCategoryId`, `SynonymDto.productI
 
 ### FD#1 — Read+write scope: HYBRID per entity tier
 
-- **Reference data entities** (Category, UoM, UoMClass, Tag, Synonym, ProductType, Attribute, ProductGroup): partial-strangler per Phase 4 FD#1 — GET endpoints + React-facing writes only where React `*Api.js` POSTs/PUTs/DELETEs today.
+- **Reference data entities** (Category, UoM, UoMClass, Tag, Synonym, ProductType, Attribute, ProductGroup): partial-strangler per Phase 4 FD#1 — GET endpoints + writes only where T1 audit confirms callers under the expanded enumeration scope (all `src/js/**/*.{js,jsx,ts,tsx}` for inline `/api/*` strings + every action of each catalog-area `*ApiController.groovy`). Default GET-only per entity; POST/PUT/DELETE added only for (entity, verb) pairs T1 finds callers for.
 - **Product**: READ-ONLY (Phase 3 location-service shape). `src/js/api/services/ProductApi.js` has zero `apiClient.post/put/delete` calls; Product is GSP-created.
 - **Grails-internal writers stay Grails** for everything: ProductMergeService (stays until Phase 6 per parent §6 row 6), InventoryService.processData per-row product create-or-find (stays until Phase 6 per parent §4.3 row 7), GSP-driven Product/Category/UoM admin in `ProductController.groovy` + `CategoryController.groovy` + `ProductPackageController.groovy` etc. (stays until Phase 12 GSP cleanup), CSV importers (`TagImportDataService`, `CategoryImportDataService`, `ProductSynonymImportDataService` — out of partial-strangler scope), LoadDataService bootstrap + MigrationService seed (stays until sagas at Phase 7+).
 
@@ -57,6 +57,7 @@ For each Grails `*ApiController.groovy` in `grails-app/controllers/org/pih/wareh
 - **`ProductApiController.groovy`** — DEFINITIVELY STAYS. Hosts cross-context queries: `demand` (forecastingService), `demandSummary`, `productSummary` (queries ProductSummary SQL view backed by inventory tables), `productAvailability` (queries ProductAvailability table — inventory-context per parent §4.3 row 6), plus `list`, `search`, `productSummary` actions referencing `inventoryService`/`productAvailabilityService`. catalog-service can't reproduce these without inventory data. The 4-5 basic Product reads migrate to catalog-service's `/api/product/*`; the rest stay Grails at `/api/products/*`.
 - **`CategoryApiController.groovy`** — likely 100%-coverable by catalog-service `CategoryController`; T1 audit confirms by enumerating actions; if covered, delete; if not, keep alive.
 - **`ProductPackageApiController.groovy`** — DEFERRED entity (ProductPackage in §5 deferrals); STAYS alive.
+- **`ProductClassificationApiController.groovy`** — DEFINITIVELY STAYS. Single `list(facilityId)` action invokes `ProductClassificationService.list(facilityId)` which reads `Location.read(facilityId)` (`grails-app/services/.../ProductClassificationService.groovy:37`; Phase 3 entity) + `InventoryLevel` rows filtered by `facility.inventory` (lines 50, 55; Phase 6 entity not yet migrated) + `Product.abcClass` column (line 42; catalog). Cross-context query matching FD#12 stays-alive rationale for ProductApiController. Future entity migration (`abcClass` → own entity per service doc comment lines 18–24) naturally lands in Phase 6 inventory restructure or Phase 11 reporting.
 - **`ProductsConfigurationApiController.groovy`** — T1 audit decides; probably stays (configuration endpoint with cross-context dependencies likely).
 - Other `*ApiController` files for in-scope entities (TagApiController if exists, etc.) — T1 audit decides per file.
 
@@ -69,14 +70,14 @@ This is a per-controller decision pattern rather than the blanket FD#4 deletion 
 | Entity | Location | Shape | Notes |
 |---|---|---|---|
 | Product | `product/Product.groovy:53` | READ-ONLY | No React writes today; has `publishPersistenceEvent` lifecycle hook firing `InventorySnapshotEvent` — non-issue since R/O per FD#8 |
-| Category | `product/Category.groovy:14` | Full CRUD | Self-FK `parentCategory` tree (line 20); `hasMany categories`; Grails L2 cache (line 37) |
+| Category | `product/Category.groovy:14` | Per T1 (default GET only) | Self-FK `parentCategory` tree (line 20); `hasMany categories`; Grails L2 cache (line 37) |
 | UnitOfMeasure | `core/UnitOfMeasure.groovy:14` | GET only | FK `uomClass` (line 29); Grails GORM `beforeInsert/Update` audit hooks → JPA `@EntityListeners` port |
 | UnitOfMeasureClass | `core/UnitOfMeasureClass.groovy:15` | GET only | Bidirectional FK to UoM via `baseUom` (line 32) per FD#11 |
-| Tag | `core/Tag.groovy:16` | Full CRUD | M:N to Product via `product_tag` per FD#9; `belongsTo = Product` + `hasMany products` |
-| Synonym | `core/Synonym.groovy:17` | Full CRUD | `belongsTo product: Product` (line 37); cross-instance validator → service layer per FD#10 |
+| Tag | `core/Tag.groovy:16` | Per T1 (default GET only) | M:N to Product via `product_tag` per FD#9; `belongsTo = Product` + `hasMany products` |
+| Synonym | `core/Synonym.groovy:17` | Per T1 (default GET only) | `belongsTo product: Product` (line 37); cross-instance validator → service layer per FD#10 |
 | ProductType | `product/ProductType.groovy:16` | GET only | Flat reference data |
 | Attribute | `product/Attribute.groovy:22` | GET only | Flat reference data (was missed in initial scoping — distinct from ProductAttribute) |
-| ProductGroup | `product/ProductGroup.groovy:15` | Full CRUD (per `ProductGroupApi.js`) | hasMany products (M:N pattern); React surface in `src/js/api/services/ProductGroupApi.js` |
+| ProductGroup | `product/ProductGroup.groovy:15` | Per T1 (default GET only) | hasMany products (M:N pattern); React surface in `src/js/api/services/ProductGroupApi.js` |
 
 **DEFERRED to Phase 5.5** (entities with deferrable Phase-5-shape work that can land in a follow-on slice):
 
@@ -181,16 +182,16 @@ T1 audit confirms exact split. React `src/js/api/urls.js` constants migrate ONLY
                 │  │ - ProductController        (READ ONLY, ~4 GET)       │    │
                 │  │   GET /api/product/{id}, GET /api/product            │    │
                 │  │   GET /api/product/{lotNumbers,availableItems}       │    │
-                │  │ - CategoryController       (full CRUD)               │    │
-                │  │ - TagController            (full CRUD; M:N writes)   │    │
-                │  │ - SynonymController        (full CRUD)               │    │
+                │  │ - CategoryController       (per T1; default GET only)│    │
+                │  │ - TagController            (per T1; M:N writes if T1)│    │
+                │  │ - SynonymController        (per T1; default GET only)│    │
                 │  │ - UnitOfMeasureController                            │    │
                 │  │   GET /api/unitOfMeasure{,/{id}}                     │    │
                 │  │   GET /api/unitOfMeasureClass{,/{id}}                │    │
                 │  │ - ReferenceController                                │    │
                 │  │   GET /api/productType{,/{id}}                       │    │
                 │  │   GET /api/attribute{,/{id}}                         │    │
-                │  │ - ProductGroupController   (CRUD per ProductGroupApi)│    │
+                │  │ - ProductGroupController   (per T1; default GET only)│    │
                 │  ├────────────────────────────────────────────────────┤    │
                 │  │ Services + reference-data caches per FD#7:           │    │
                 │  │  - ProductService, CategoryService, TagService,      │    │
@@ -252,7 +253,7 @@ T1 audit confirms exact split. React `src/js/api/urls.js` constants migrate ONLY
 
 | # | Task | Notes |
 |---|------|-------|
-| **T1** | **Empirical audit** (FD#5 final IN/DEFER + FD#4 per-`*ApiController` delete/keep + FD#12 ProductApiController action-level migration split + React `src/js/api/urls.js` enumeration per migrated endpoint + cross-context atomic-write audit per parent §8 Step 1 — already partially done in brainstorming; T1 finalizes) | Output: final entity table, URL surface table, React URL migration list, cross-context atomic-write findings. User approval gate before T2. |
+| **T1** | **Empirical audit** (FD#5 final IN/DEFER + FD#4 per-`*ApiController` delete/keep including action-level enumeration for option/util actions like `categoryOptions`/`tagOptions`/`productGroupOptions` + FD#12 ProductApiController action-level migration split + **expanded React enumeration**: grep all `src/js/**/*.{js,jsx,ts,tsx}` for inline `/api/*` URL strings (catches inline callers like `src/js/utils/option-utils.jsx:281` `/api/categoryOptions` + `:291` `/api/tagOptions` not routed through `urls.js`) AND enumerate `src/js/api/urls.js` constants per migrated endpoint + **per-entity write-scope finalization** (default GET-only for Category/Tag/Synonym/ProductGroup; POST/PUT/DELETE added only for (entity, verb) pairs T1 finds callers for) + cross-context atomic-write audit per parent §8 Step 1 — already partially done in brainstorming; T1 finalizes) | Output: final entity table with per-entity write scope, URL surface table, React URL migration list, cross-context atomic-write findings. User approval gate before T2. |
 | **T2** | Spring Boot module skeleton (`services/catalog-service/`); Gradle sub-module; main class; basic build | Phase 4 T2 pattern; ~50 LOC |
 | **T3** | JPA entities (9) + Liquibase shadow changelogs (one per table) | Heavier than Phase 4 T3 (9 vs 5 entities); includes Tag↔Product M:N + Category tree + UoM↔UoMClass bidir |
 | **T4** | DTOs (flat FK-only per FD#3) + mappers (entity → DTO static `from()` methods) | Mechanical; ~20 LOC per entity |
@@ -292,6 +293,7 @@ T1 audit confirms exact split. React `src/js/api/urls.js` constants migrate ONLY
 - **13 deferred catalog entities** → Phase 5.5 (ProductSupplier + variants, ProductPackage + ProductPrice, ProductCatalog + Item, ProductAssociation, ProductComponent, ProductAttribute, UoMConversion)
 - **Product POST/PUT/DELETE** → React doesn't call today; defer indefinitely (unless Phase 5.5 surfaces a need)
 - **ProductApiController stays alive** — its cross-context query actions (demand, productSummary, productAvailability) cannot migrate without inventory data
+- **ProductClassificationApiController stays alive** — its single `list(facilityId)` action is a cross-context query (Location + InventoryLevel + Product); cannot migrate without Phase 6 inventory data + Location dependency; future entity migration (`abcClass` → own entity) naturally lands in Phase 6 or Phase 11
 - **Cross-service productService consumers** (`StockMovementService`, `ProductAvailabilityService`, `ShipmentService`, `LoadDataService`, `ProductSynonymImportDataService`) read product data via direct JDBC against shared DB during transition; switch to HTTP at each consumer's owning service extraction
 - **`product_tag` M:N from Grails side** — `Tag.addToProducts/removeFromProducts` Grails calls write `product_tag` rows directly via Hibernate 5; catalog-service writes the same table via Hibernate 6. Concurrent writes are constraint-protected (unique pair) but not coordinated
 - **Reference-data cache invalidation on Grails GSP writes** — same shared-DB pattern as Phase 4 PartyTypeCache; tolerable cache lag (caches are refresh-on-miss, not invalidate-on-write)
@@ -346,7 +348,7 @@ The following 26 load-bearing assumptions were enumerated cold against the desig
 | A12 | Reference-data row counts | ⚠️ All ZERO except UoM(8)/UoMClass(2) | Dev DB queries via `sudo docker exec openboxes-db mariadb ... SELECT COUNT(*) FROM ...` → FD#7 falls back to churn-frequency heuristic |
 | A13 | ProductApiController exists | ⚠️ God-controller | `ProductApiController.groovy` has list, demand, demandSummary, productSummary, productAvailability, search + injects productService/inventoryService/forecastingService/productAvailabilityService → FD#4 stays alive, FD#12 thin migration |
 | A14 | Grails URL mappings exist | ⚠️ Huge surface | `UrlMappings.groovy` lines 45-148, 504-509 enumerate 20+ /api/products/* and /api/categories/* paths INCLUDING cross-context endpoints → FD#4 per-URL decisions |
-| A15 | React URL constants location | ✅ | `src/js/api/urls.js` is THE URL constants file; `src/js/api/services/ProductApi.js` confirmed READ-ONLY (no apiClient.post/put/delete for Product) → FD#1 Product R/O |
+| A15 | React URL constants location | ⚠️ | `src/js/api/urls.js` is the primary URL constants file BUT some catalog URLs are inline strings in components (verified: `src/js/utils/option-utils.jsx:281` calls `/api/categoryOptions`, `:291` calls `/api/tagOptions`); T1 audit must grep all `src/js/**/*.{js,jsx,ts,tsx}` for inline `/api/*` strings, not just `urls.js`. `src/js/api/services/ProductApi.js` confirmed READ-ONLY (no apiClient.post/put/delete for Product) → FD#1 Product R/O still stands. |
 | A16 | Cross-context atomic-write audit | ⚠️ Many findings | greps surfaced: `new Product(` in InventoryService; `new Tag(` in TagImportDataService; `new Category(` in CategoryImportDataService; cross-package productService injections in LoadDataService, StockMovementService, ProductAvailabilityService, ShipmentService, ProductSynonymImportDataService → all handled per parent §4.3 coverage policy + FD#1 (stay Grails) |
 | A17 | ProductMergeService stays Grails | ✅ | `ProductMergeService.groovy:44` `@Transactional def mergeProduct` has 15+ `.save(flush:true)` across Transaction/InventoryItem/RequisitionItem/ShipmentItem/OrderItem/ReceiptItem/InvoiceItem — confirms parent §6 Phase 6 deferral |
 | A18 | InventoryService.processData creates Products | ✅ | `grails-app/services/org/pih/warehouse/inventory/InventoryService.groovy` — Phase 6 per parent §4.3 row 7 |
