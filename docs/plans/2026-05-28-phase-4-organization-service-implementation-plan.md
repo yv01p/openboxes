@@ -188,7 +188,7 @@ This task gates T2. If A28 or live-probe surfaces unexpected state, halt and sur
   - Capture actual column names + types for T4 entity column annotations. Especially verify: `class` is VARCHAR(255) NOT NULL, `code`, `description`, `name`, `default_location_id`, `active` are present in `party` (single-table inheritance).
   - Verify Grails `openboxes.identifier.organization.{minSize, maxSize}` config values via:
     ```bash
-    grep -nE "openboxes\.identifier\.organization\.(min|max)Size" grails-app/conf/application.yml grails-app/conf/application.groovy 2>/dev/null
+    grep -nE "openboxes\.identifier\.organization\.(min|max)Size" grails-app/conf/runtime.groovy grails-app/conf/application.yml grails-app/conf/application.groovy 2>/dev/null
     ```
     Expected: returns the actual values used by Grails. If different from T2 Step 5's `minSize: 2, maxSize: 3`, update T2 application.yml before T2 commits. Plan-author guessed defaults; T1 must pin to actual.
 
