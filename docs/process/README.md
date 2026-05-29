@@ -6,6 +6,7 @@ Codified lessons accumulated across migration phases. Future plan-writers + SDD 
 
 - `sdd-reviewer-checklist.md` — additional checks for spec/code reviewers (e.g., JPA SINGLE_TABLE nullability)
 - `plan-template-defects.md` — known defects in plan templates (e.g., T12 done-gate scripts)
+- `plan-ordering-rules.md` — task-ordering invariants for plans (compose-modifying ⇒ CI workflow rule + file-conflict rule)
 
 ## How to add a new lesson
 
