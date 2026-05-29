@@ -61,6 +61,8 @@ services:
           condition: service_healthy
         location-service:
           condition: service_healthy
+        organization-service:
+          condition: service_healthy
 
     db:
       image: mariadb:10
