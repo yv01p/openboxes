@@ -188,7 +188,7 @@ export const debounceProductsInOrders = (waitTime, minSearchLength, vendor, dest
 export const debounceOrganizationsFetch = (waitTime, minSearchLength, roleTypes = ['ROLE_SUPPLIER'], active = false) =>
   _.debounce((searchTerm, callback) => {
     if (searchTerm && searchTerm.length >= minSearchLength) {
-      apiClient.get(`/api/organizations?q=${searchTerm}${roleTypes ? roleTypes.map((roleType) => `&roleType=${roleType}`).join('') : ''}&active=${active}`)
+      apiClient.get(`/api/organization?q=${searchTerm}${roleTypes ? roleTypes.map((roleType) => `&roleType=${roleType}`).join('') : ''}&active=${active}`)
         .then((result) => callback(_.map(result.data.data, (obj) => (
           {
             value: obj.id,
@@ -222,7 +222,7 @@ export const debounceLocationGroupsFetch = (waitTime, minSearchLength) =>
   }, waitTime);
 
 export const organizationsFetch = (roleTypes = ['ROLE_SUPPLIER'], active = false) =>
-  apiClient.get(`/api/organizations?${roleTypes ? roleTypes.map((roleType) => `&roleType=${roleType}`).join('') : ''}&active=${active}`)
+  apiClient.get(`/api/organization?${roleTypes ? roleTypes.map((roleType) => `&roleType=${roleType}`).join('') : ''}&active=${active}`)
     .then((res) => {
       if (res.data.data) {
         return res.data.data.map((obj) => (

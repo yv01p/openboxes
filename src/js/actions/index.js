@@ -558,7 +558,7 @@ export function fetchSuppliers({
 
 export function fetchBuyers(active = false) {
   return (dispatch) => {
-    apiClient.get(`/api/organizations?roleType=ROLE_BUYER&active=${active}`)
+    apiClient.get(`/api/organization?roleType=ROLE_BUYER&active=${active}`)
       .then((res) => {
         if (res.data.data) {
           const buyers = res.data.data.map((obj) => (
