@@ -26,7 +26,12 @@ jobs:
         with:
           node-version: '20'
           cache: npm
-      - run: npm ci
+      # --legacy-peer-deps mirrors the npm v6 resolver behavior the rest of the build
+      # uses (Gradle's :npm_run_bundle wraps npm-v6.14.18); strict `npm ci` under modern
+      # npm rejects pre-existing peer-dep mismatches like @testing-library/react-hooks@8
+      # vs react@16.8.6 that npm v6 silently tolerates. Real fix is upgrading react to
+      # 16.9+ or dropping @testing-library/react-hooks — both out of Phase 5 scope.
+      - run: npm ci --legacy-peer-deps --no-audit --no-fund
       - run: npm run lint
 
   e2e:
