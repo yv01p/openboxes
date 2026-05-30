@@ -28,3 +28,21 @@ If two tasks in the same plan touch the same file, EITHER:
 **Verification at plan-write time**:
 - For each pair of tasks (T_a, T_b), grep their `Files:` declarations for overlap
 - If overlap exists: pick a resolution from the three above and document in the plan
+
+## Rule 3: nginx prefix-match must not silently capture Grails sub-routes (Phase 5 T9 follow-up)
+
+When a plan adds a nginx prefix-match `location /api/<entity>/` that proxies to a new Spring Boot service, it silently captures every URL under that prefix — including Grails sub-routes the new service does NOT implement. Such captured routes return 404 (no handler in the new service) instead of falling through to the `/api/` catch-all and reaching Grails.
+
+**Why**: nginx prefix-match (`location /api/<entity>/`) wins over the `/api/` catch-all for any URL starting with `/api/<entity>/`. If Grails serves `/api/<entity>/<action>` (e.g., `UnitOfMeasureApiController.currencies()` at `/api/unitOfMeasure/currencies`) and the new service does not, the request gets routed to the new service which returns 404. Production React breaks silently — the React URL constant resolves to a real-looking path, the network request returns 404, the UI shows an empty/broken state without an obvious cause.
+
+**Phase 5 violation evidence**: T8 added `location /api/unitOfMeasure/` → catalog-service:8085. UrlMappings.groovy:504 has explicit Grails mapping `/api/unitOfMeasure/currencies` → `UnitOfMeasureApiController.currencies` (non-UoM reference data, kept on Grails per T1 audit). Post-T8 the React `CURRENCIES_OPTIONS` URL returned 404. Spec reviewer surfaced at T9 gate; fixed at commit `c505e5842` by adding `location = /api/unitOfMeasure/currencies` exact-match BEFORE the catalog prefix (nginx exact-match has priority over prefix-match regardless of file order).
+
+**Verification at plan-write time**:
+- For each task `T_nginx` that adds a `location /api/<entity>/` prefix-match block, identify every explicit Grails sub-route under that prefix:
+  ```bash
+  grep -nE '"/api/<entity>/[a-zA-Z]' grails-app/controllers/org/pih/warehouse/UrlMappings.groovy
+  ```
+- For EACH such mapping, decide:
+  - **Stays Grails**: add `location = /api/<entity>/<action>` exact-match block to `T_nginx` task description, routed to `http://app:8080/openboxes/api/<entity>/<action>`, placed BEFORE the prefix-match
+  - **Migrates to the new service**: confirmed by the relevant per-entity audit (e.g., T1 for catalog) — implement the handler in the service before T8
+- Smoke MUST include explicit curl for every Grails-stays sub-route to confirm non-404 status post-reload
