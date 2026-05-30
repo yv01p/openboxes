@@ -1,0 +1,17 @@
+<?xml version="1.1" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                       https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.20.xsd"
+                   logicalFilePath="services/catalog-service/db/changelog/changelog-shadow-create-category.xml">
+    <changeSet id="phase5-shadow-create-category" author="openboxes-catalog">
+        <preConditions onFail="MARK_RAN" onFailMessage="category table not found — Grails Liquibase must run first">
+            <tableExists tableName="category"/>
+        </preConditions>
+        <comment>
+            Shadow for category table. Grails Liquibase owns table creation.
+            catalog-service uses spring.jpa.hibernate.ddl-auto=validate to prove entity-mapping correctness.
+        </comment>
+        <!-- No body: table already exists per the precondition. -->
+    </changeSet>
+</databaseChangeLog>

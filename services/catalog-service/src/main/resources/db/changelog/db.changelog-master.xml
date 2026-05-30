@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                       https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.20.xsd">
+    <include file="db/changelog/changelog-shadow-create-product.xml"/>
+    <include file="db/changelog/changelog-shadow-create-category.xml"/>
+    <include file="db/changelog/changelog-shadow-create-unit-of-measure.xml"/>
+    <include file="db/changelog/changelog-shadow-create-unit-of-measure-class.xml"/>
+    <include file="db/changelog/changelog-shadow-create-tag.xml"/>
+    <include file="db/changelog/changelog-shadow-create-synonym.xml"/>
+    <include file="db/changelog/changelog-shadow-create-product-type.xml"/>
+    <include file="db/changelog/changelog-shadow-create-attribute.xml"/>
+    <include file="db/changelog/changelog-shadow-create-product-group.xml"/>
+    <include file="db/changelog/changelog-shadow-create-product-tag.xml"/>
+    <include file="db/changelog/changelog-shadow-create-product-group-product.xml"/>
+</databaseChangeLog>
