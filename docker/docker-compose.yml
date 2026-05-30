@@ -48,6 +48,16 @@ services:
         app:
           condition: service_healthy
 
+    catalog-service:
+      extends:
+        file: docker-compose-base.yml
+        service: catalog-service
+      depends_on:
+        db:
+          condition: service_healthy
+        app:
+          condition: service_healthy
+
     nginx:
       extends:
         file: docker-compose-base.yml
@@ -62,6 +72,8 @@ services:
         location-service:
           condition: service_healthy
         organization-service:
+          condition: service_healthy
+        catalog-service:
           condition: service_healthy
 
     db:

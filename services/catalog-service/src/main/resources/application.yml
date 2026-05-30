@@ -1,0 +1,26 @@
+server:
+  port: 8085
+spring:
+  application:
+    name: catalog-service
+  datasource:
+    url: ${DATASOURCE_URL}
+    username: ${DATASOURCE_USERNAME}
+    password: ${DATASOURCE_PASSWORD}
+    driver-class-name: org.mariadb.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate.dialect: org.hibernate.dialect.MariaDBDialect
+  liquibase:
+    enabled: false  # T3 enables once shadow changelogs exist
+    change-log: classpath:db/changelog/db.changelog-master.xml
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+openboxes:
+  jwt:
+    secret: ${OPENBOXES_JWT_SECRET}
