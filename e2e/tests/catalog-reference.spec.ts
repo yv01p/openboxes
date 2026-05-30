@@ -61,4 +61,10 @@ test.describe('catalog-service reference data: ProductType + Attribute (cached p
         expect(Array.isArray(body.data.entityTypeCodes)).toBeTruthy();
         if (body.data.options.length > 0) expect(typeof body.data.options[0]).toBe('string');
     });
+
+    test('regression: /api/attributes (plural) returns 404 — AttributeApiController deleted in T9 (commit 7e4beb69a)', async ({ request }) => {
+        const cookie = await login(request);
+        const res = await request.get(`${BASE}/api/attributes`, { headers: { Cookie: cookie } });
+        expect(res.status()).toBe(404);
+    });
 });
