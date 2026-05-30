@@ -21,7 +21,7 @@
 - `services/catalog-service/src/main/java/org/openboxes/catalog/security/JwtCookieAuthFilter.java` — 5th copy from organization-service per FD#6 (T5)
 - `services/catalog-service/src/main/java/org/openboxes/catalog/security/JwtService.java` — ditto (T5)
 - `services/catalog-service/src/main/java/org/openboxes/catalog/security/SecurityConfig.java` — ditto (T5)
-- `services/catalog-service/src/main/java/org/openboxes/catalog/entity/Product.java` — `@Entity @Immutable` (R/O per FD#1); FKs to UnitOfMeasure, ProductType, Category; M:N to Tag via `product_tag` (Product is owning side per FD#9); `@OneToMany(mappedBy="product") List<Synonym> synonyms`; M:N to ProductGroup via `product_group_product`; `productFamily` FK to ProductGroup (per ProductGroup `siblings` mappedBy) (T4)
+- `services/catalog-service/src/main/java/org/openboxes/catalog/entity/Product.java` — `@Entity` (R/O per FD#1 — enforced via `@Transactional(readOnly = true)` on ProductService, NOT `@Immutable` annotation, per CIR R1 §2.1); FKs to UnitOfMeasure, ProductType, Category; M:N to Tag via `product_tag` (Product is owning side per FD#9); `@OneToMany(mappedBy="product") List<Synonym> synonyms`; M:N to ProductGroup via `product_group_product`; `productFamily` FK to ProductGroup (per ProductGroup `siblings` mappedBy) (T4)
 - `services/catalog-service/src/main/java/org/openboxes/catalog/entity/Category.java` — self-FK tree (`@ManyToOne parentCategory`, `@OneToMany(mappedBy="parentCategory") List<Category> categories`); GlAccount FK; `@Cacheable` for L2 cache per FD#7 (T4)
 - `services/catalog-service/src/main/java/org/openboxes/catalog/entity/UnitOfMeasure.java` — `@ManyToOne uomClass` per FD#11 (T4)
 - `services/catalog-service/src/main/java/org/openboxes/catalog/entity/UnitOfMeasureClass.java` — bidirectional `@ManyToOne baseUom` + `@OneToMany(mappedBy="uomClass") List<UnitOfMeasure> uoms`; both FKs nullable per FD#11 (T4)
@@ -666,15 +666,17 @@ Flat entities per FD#2 (no @Inheritance); follow Grails domain field shapes veri
   package org.openboxes.catalog.entity;
 
   import jakarta.persistence.*;
-  import org.hibernate.annotations.Immutable;
   import java.math.BigDecimal;
   import java.time.Instant;
   import java.util.HashSet;
   import java.util.List;
   import java.util.Set;
 
+  // READ-ONLY per FD#1 (no setter methods exposed); R/O enforcement is via ProductService
+  // being @Transactional(readOnly = true). @Immutable is intentionally NOT applied — it would
+  // suppress owned-collection writes on product_tag (Tag M:N owning side per FD#9), breaking
+  // TagService writes when T1 option (c) is selected (CIR R1 §2.1).
   @Entity
-  @Immutable  // FD#1: Product is READ-ONLY in catalog-service; no JPA writes
   @Table(name = "product")
   public class Product {
       @Id
