@@ -18,7 +18,8 @@
     "test": "jest",
     "styleguide": "styleguidist server",
     "styleguide:build": "styleguidist build",
-    "eslint": "eslint --fix --ext .js,.jsx ./src/js/"
+    "eslint": "eslint --fix --ext .js,.jsx ./src/js/",
+    "lint": "eslint --ext .js,.jsx ./src/js/"
   },
   "jest": {
     "verbose": true,

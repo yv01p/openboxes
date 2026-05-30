@@ -13,8 +13,25 @@ on:
     branches: [main]
 
 jobs:
+  lint:
+    # Fast-fail gate: catches ESLint errors in ~1 min instead of buried 6+ min into
+    # webpack-bundle inside prepareDocker. Phase 5 retro RC-26: 6 max-len comment
+    # violations in T9 React URL changes silently passed local Gradle build (cached
+    # :npm_run_bundle UP-TO-DATE) but fresh CI caught them — by structuring lint as
+    # its own job, future violations surface immediately with a focused log.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+
   e2e:
     runs-on: ubuntu-latest
+    needs: lint  # skip the 6-min Gradle/Docker stack build if ESLint fails
     steps:
       - uses: actions/checkout@v5
       - name: Set up JDK 8

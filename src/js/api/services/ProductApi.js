@@ -11,7 +11,8 @@ import {
 import apiClient from 'utils/apiClient';
 
 export default {
-  // Phase 5: routed to openboxes-catalog-service via `/api/product` (FD#12 basic list). Other consumers below keep PRODUCT_API plural to reach Grails-stays actions.
+  // Phase 5: routed to openboxes-catalog-service via `/api/product` (FD#12 basic list).
+  // Other consumers below keep PRODUCT_API plural to reach Grails-stays actions.
   getProducts: (config) => apiClient.get(CATALOG_PRODUCT_API, config),
   getInventoryItem: (productId, lotNumber) => apiClient.get(INVENTORY_ITEM(productId, lotNumber)),
   // TODO: tech debt: Replace by the product api call instead of generic

@@ -80,10 +80,13 @@ export const INVENTORY_ITEM = (productCode, lotNumber) => `${CONTEXT_PATH}/${PRO
 export const LOT_NUMBERS_WITH_EXPIRATION_DATE = `${PRODUCT_API}/inventoryItems/lotNumbersWithExpirationDate`;
 export const AVAILABLE_ITEMS = `${PRODUCT_API}/availableItems`;
 
-// Phase 5 catalog-service: basic Product list (FD#12). All other PRODUCT_API consumers continue to hit Grails plural URLs for cross-context actions (search, availableItems, inventoryItems, demand, etc.).
+// Phase 5 catalog-service: basic Product list (FD#12). All other PRODUCT_API consumers
+// continue to hit Grails plural URLs for cross-context actions
+// (search, availableItems, inventoryItems, demand, etc.).
 export const CATALOG_PRODUCT_API = `${API}/product`;
 
-// Phase 5 catalog-service endpoints (FD#4 singular routes; served by openboxes-catalog-service via nginx).
+// Phase 5 catalog-service endpoints (FD#4 singular routes;
+// served by openboxes-catalog-service via nginx).
 export const CATEGORY_API = `${API}/category`;
 export const TAG_API = `${API}/tag`;
 export const SYNONYM_API = `${API}/synonym`;
@@ -122,7 +125,8 @@ export const PREFERENCE_TYPE_OPTIONS = `${API}/preferenceTypeOptions`;
 export const RATING_TYPE_OPTIONS = `${API}/ratingTypeCodeOptions`;
 
 // ATTRIBUTES
-// Phase 5: singularized per FD#4 (catalog-service `/api/attribute`); AttributeApiController.groovy deleted in T9.
+// Phase 5: singularized per FD#4 (catalog-service `/api/attribute`);
+// AttributeApiController.groovy deleted in T9.
 export const ATTRIBUTES = `${API}/attribute`;
 
 // LOCATIONS
@@ -166,11 +170,14 @@ export const PRODUCT_SUPPLIER_PREFERENCES_BY_ID = (id) => `${PRODUCT_SUPPLIER_PR
 export const PRODUCT_SUPPLIER_EXPORT = `${PRODUCT_SUPPLIER_API}/export`;
 
 // UNIT OF MEASURE
-// Phase 5: singularized per FD#4 (catalog-service `/api/unitOfMeasure`). The catalog list endpoint is the root (`?type=...` filter accepted), replacing the prior Grails `/api/unitOfMeasures/options` action.
+// Phase 5: singularized per FD#4 (catalog-service `/api/unitOfMeasure`). The catalog list
+// endpoint is the root (`?type=...` filter accepted), replacing the prior Grails
+// `/api/unitOfMeasures/options` action.
 export const UNIT_OF_MEASURE_API = `${API}/unitOfMeasure`;
 export const UNIT_OF_MEASURE_OPTIONS = `${UNIT_OF_MEASURE_API}`;
 // Currencies don't use url in plural form, do not change it to UNIT_OF_MEASURE_API!
-// `/api/unitOfMeasure/currencies` continues to hit Grails UnitOfMeasureApiController.currencies (non-UoM reference data; not in Phase 5 scope).
+// `/api/unitOfMeasure/currencies` continues to hit Grails UnitOfMeasureApiController.currencies
+// (non-UoM reference data; not in Phase 5 scope).
 export const CURRENCIES_OPTIONS = `${API}/unitOfMeasure/currencies`;
 
 // PRODUCT PACKAGE
