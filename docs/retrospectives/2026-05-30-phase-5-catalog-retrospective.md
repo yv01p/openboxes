@@ -2,7 +2,7 @@
 date: 2026-05-30
 phase: 5 (Catalog slice)
 tag: phase-5-catalog
-commit_range: a3d93a154..f410e0549
+commit_range: a3d93a154..c5f531851
 plan: docs/plans/2026-05-29-phase-5-catalog-service-implementation-plan.md
 spec_section: §10 (Phase 5)
 forward_to: Phase 5.1 (jwt-auth-common extraction — see §"Forward") + Phase 5.5 (13 deferred catalog entities)
@@ -183,8 +183,8 @@ True Phase X items (Category E + the surviving D-judgment-with-future-dependency
 - **Design spec**: `docs/specs/2026-05-29-phase-5-catalog-service-design.md` (376 lines; 12 FDs; CDR R1+R2+R3-clean; FD#9 RESOLVED at T1 audit per §5)
 - **T1 audit output**: `docs/audits/2026-05-30-phase-5-t1-audit-output.md` (299 lines; per-entity write scope + per-controller delete/keep matrix + React URL surface + cross-context findings + FD#9 disposition)
 - **Parent migration design**: `docs/specs/2026-05-25-grails-to-spring-boot-migration-design.md` (shared with Phases 0-12)
-- **Tag**: `phase-5-catalog` at `f410e0549` (annotated; pushed to origin)
-- **Commit range** (Phase 5): `a3d93a154..f410e0549` (20 commits: 1 Phase 4.1 retro back-port + 4 spec/CDR + 2 plan/CIR + 13 SDD task commits including 4 follow-ups (T8/T9 nginx-currencies fix, T10 framing retraction, T11 plural-404 canary) + 1 mid-stream Rule-3 codification)
+- **Tag**: `phase-5-catalog` at `c5f531851` (annotated; pushed to origin) — moved from the initial `f410e0549` to include 11 post-retro RC-26 L2 follow-up commits that resolved the husky / lint-staged / npm-engine CI cascade (final green CI at run 26673998252)
+- **Commit range** (Phase 5): `a3d93a154..c5f531851` (31 commits: 20 original (1 Phase 4.1 retro back-port + 4 spec/CDR + 2 plan/CIR + 13 SDD task commits including 4 follow-ups (T8/T9 nginx-currencies fix, T10 framing retraction, T11 plural-404 canary) + 1 mid-stream Rule-3 codification) + 11 post-retro RC-26 L2 follow-ups (1 retro-RC-26 update at `7cbd5b241`, 1 L1 CI lint job at `3b87aab6d`, 1 L2 husky/lint-staged install at `17eaadfc6`, 7 CI-cascade fixes through `c5f531851`, 1 chmod +x at `980af7cd1`). Four of the cascade commits explicitly flagged "Phase 5.1 candidate" for the root-cause fixes (node-engine bump in `package.json` + Gradle toolchain; React 16.8.6 peer-dep conflict; `package-lock.json` regenerator discipline under Gradle's bundled npm v6))
 - **Critical reviews** (gitignored): 6 files in `docs/criticalreviews/` (CDR R1, R2, R3; CIR R1, R2)
 - **Process docs touched mid-stream**: `docs/process/plan-ordering-rules.md:32` Rule 3 (commit `7291864fc`)
 - **Phase 4.1 cleanup retrospective** (predecessor; same-file as Phase 4 retro per Phase 4.1 design): `docs/retrospectives/2026-05-29-phase-4-organization-retrospective.md` (RC table dispositions updated at commit `a3d93a154`)
