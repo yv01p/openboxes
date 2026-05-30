@@ -50,17 +50,14 @@ class CatalogServiceIntegrationTest {
 
     private static final String TEST_SECRET = "test-secret-32-chars-minimum-for-hs256-key";
 
-    // Caches are @Component singletons that persist across tests in the same Spring context.
-    // ProductType + Attribute entities have lazy ElementCollections (options/entityTypeCodes/
-    // supportedActivities/required/displayedFields). Once populated outside an HTTP request's
-    // OSIV session, those collections are unreachable from subsequent HTTP requests (the entity
-    // is detached from a now-closed session). Each test that exercises ProductType/Attribute
-    // must therefore start with empty caches so the FIRST endpoint call populates the cache
-    // within the OSIV session that consumes it. UoMCache is unaffected (UoM/UoMClass DTOs
-    // touch no lazy collections beyond ManyToOne id reads).
-    // NOTE: This is a known production caching limitation surfaced by these tests; cache
-    // redesign (store DTOs instead of entities, or eager-fetch collections) belongs in a
-    // later phase, not T10. See concerns in commit body.
+    // Test-isolation only: caches are @Component singletons shared across tests in this Spring
+    // context; clearing them per-test gives each test deterministic state regardless of execution
+    // order. Production is NOT affected: OSIV (spring.jpa.open-in-view=true, Spring Boot 3.x
+    // default) + @Transactional(readOnly=true) on ProductTypeService/AttributeService re-attaches
+    // the cached entity to the current request's EntityManager, so lazy @ElementCollection fields
+    // load fine across requests. Verified empirically: 5 sequential calls to /api/productType
+    // via real nginx → Tomcat after a catalog-service restart all return populated supportedActivities.
+    // (Retracts the misleading "production caching limitation" framing in commit 36c25a4d0's body.)
     @BeforeEach
     void clearCaches() throws Exception {
         clearCache(productTypeCache);
@@ -259,9 +256,7 @@ class CatalogServiceIntegrationTest {
     }
 
     @Test void productTypeCache_refreshOnEmptyServesFromSeed() throws Exception {
-        // Cache cleared in @BeforeEach. First call populates within OSIV session and serves.
-        // Cannot assert second-call-from-cache for ProductType/Attribute due to lazy
-        // ElementCollection detachment; see clearCaches() javadoc for production caveat.
+        // Cache cleared in @BeforeEach for test isolation; first call populates + serves.
         mvc.perform(get("/api/productType").cookie(authCookie()))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.length()").value(2));
@@ -269,8 +264,7 @@ class CatalogServiceIntegrationTest {
     }
 
     @Test void attributeCache_refreshOnEmptyServesFromSeed() throws Exception {
-        // Cache cleared in @BeforeEach. First call populates within OSIV session and serves.
-        // See clearCaches() javadoc.
+        // Cache cleared in @BeforeEach for test isolation; first call populates + serves.
         mvc.perform(get("/api/attribute").cookie(authCookie()))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.length()").value(2));
@@ -338,7 +332,6 @@ class CatalogServiceIntegrationTest {
     }
 
     @Test void productTypeDto_isFlat_noNestedEntities() throws Exception {
-        // Cache cleared in @BeforeEach; single endpoint call populates cache within OSIV.
         mvc.perform(get("/api/productType/pt-good").cookie(authCookie()))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.id").value("pt-good"))
@@ -348,7 +341,6 @@ class CatalogServiceIntegrationTest {
     }
 
     @Test void attributeDto_isFlat_noNestedEntities() throws Exception {
-        // Cache cleared in @BeforeEach; single endpoint call populates cache within OSIV.
         mvc.perform(get("/api/attribute/attr-color").cookie(authCookie()))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.id").value("attr-color"))
