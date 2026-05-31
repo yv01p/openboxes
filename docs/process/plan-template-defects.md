@@ -61,3 +61,64 @@ When regenerating `package-lock.json` for the project, use Gradle's bundled npm 
 **Cascade history**: Phase 5 RC-26 L2 follow-ups (commits `bc2d1e370` through `c5f531851`) hit this 4 times before the root-cause fix landed at `c5f531851` (regenerate via Gradle's bundled npm).
 
 **Fix**: any task that bumps a frontend dep + needs to regenerate package-lock.json MUST use Gradle's bundled npm, OR bump the Gradle node toolchain first (Phase 5.1 T9 does the latter; subsequent phases can use host npm directly once the toolchain matches).
+
+## Dep `engines.node` floor check (Phase 5.1 RC-32)
+
+When a plan picks a major version for a runtime / tool dep (e.g., `"lint-staged": "^17"`), query `npm view <pkg>@<picked-major> engines.node` BEFORE plan-write and verify the dep's `engines.node` floor is satisfied by the project's `engines.node` declaration. Tool deps in particular raise their Node floor between minor versions inside a major.
+
+**Verification** (at plan-write time):
+
+```bash
+npm view <pkg>@<picked-major> engines.node
+```
+
+Cite the result in the plan body (e.g., "lint-staged@17.0.7 requires Node ≥22.22.1; project `engines.node=>=22` satisfies").
+
+**Rationale**: Phase 5.1 T9 plan prescribed `"lint-staged": "^17.0.0"` alongside Node 18 LTS. `lint-staged@17.0.7` (the resolved version) requires Node ≥22.22.1; Node 18 fails the engine check. Path pivot to Node 22.22.3 corrected mid-task. See sibling RC-33 for the caret-on-active-major refinement.
+
+## Caret-on-active-major: verify both floor and latest-patch engines (Phase 5.1 RC-33)
+
+When a plan pins a dep as `"^<major>.0.0"` (caret-on-major), `npm install` resolves to the latest `<major>.x.y` at install-time. The resolved patch's `engines.node` floor may differ from `<major>.0.0`'s. The plan-write `engines.node` check (per sibling RC-32) must query BOTH the floor of `<picked-major>.0.0` AND the latest `<picked-major>.x.y`; if they diverge, plan for the higher floor.
+
+**Verification** (at plan-write time):
+
+```bash
+npm view <pkg>@<major>.0.0 engines.node      # floor for the major
+npm view <pkg>@<major> engines.node          # latest patch in the major
+```
+
+If they differ, document the divergence in the plan body and pick the higher floor as the binding requirement.
+
+**Rationale**: Phase 5.1 T9 — `lint-staged@17.0.0` declared a lower Node floor than `lint-staged@17.0.7` (the actually-resolved version). A plan-write check against `17.0.0` alone would have passed; install-time resolution against `^17` then failed the engines check on CI.
+
+## Spec-target EOL check (Phase 5.1 RC-34)
+
+For any plan that bumps a runtime / language / framework version, verify the target version's end-of-life date is at least 12 months in the future from plan-write date. Picking an already-EOL or imminently-EOL target invites a forced second bump in the next phase and locks the project into an unsupported runtime in the interim.
+
+**Verification** (at plan-write time): cite the target version's EOL date from its official source (e.g., nodejs.org/dist/index.json for Node; endoflife.date for most ecosystems). Reject plans where EOL is < 12 months out from plan-write date.
+
+**Rationale**: Phase 5.1 T9 plan prescribed Node 18 LTS as the modernization target; Node 18 entered full EOL April 2025 (13+ months before plan-write 2026-05-30). Path b corrected mid-task to Node 22 LTS (current LTS "Jod", supported through 2027). A pre-plan-write EOL check would have caught this.
+
+## Pre-commit-hook framework version bumps: verify helper-dir layout (Phase 5.1 RC-35)
+
+When a plan bumps a pre-commit hook framework's major version (husky, pre-commit, lefthook), verify the new major's on-disk layout against the old major BEFORE writing `rm -rf` directives. Husky v8 → v9 in particular moved the helper script location AND repurposed `.husky/_/` from an old-install-artifact to a runtime helper dir that the framework itself manages.
+
+**Verification** (at plan-write time): consult the framework's migration guide for the picked major bump (e.g., husky v9 release notes); enumerate which directories the framework now OWNS at runtime; preserve those across the upgrade rather than deleting them.
+
+**Rationale**: Phase 5.1 T9 plan Step 4 prescribed `rm -rf .husky/_` under the v8-install-artifact mental model; husky v9 owns `.husky/_/` as a runtime helper dir (gitignored by husky itself). The `rm -rf` was a no-op in practice but the plan's mental model was wrong; under different timing the directive could have raced husky's regeneration.
+
+## Commit-message templates: placeholders for path-pivot-mutable claims (Phase 5.1 RC-37)
+
+When a plan prescribes a commit message verbatim AND the task allows in-flight Path pivots (e.g., "if plugin v7 doesn't apply, fall back to v1.5.3"), the commit message's version numbers will bit-rot under any pivot. Prescribe templates with `<placeholder>` slots for path-pivot-mutable values rather than frozen strings; require the implementer to fill them in at commit time.
+
+**Fix**: when a plan task has explicit Path A / Path B contingencies, the commit-message block MUST use `<...>` placeholders for any value that differs between paths. Frozen literal version numbers / file lists in the commit message are only acceptable when the task has no contingencies.
+
+**Rationale**: Phase 5.1 T9 plan prescribed a commit message naming `1.5.3→7.0.1` (Path A killed mid-task), `14→18` (Path b changed to 22), and omitted the CI workflow edit (D1 added mid-task). The implementer amended all three correctly at commit time, but the pattern recurs and the cognitive load of catching plan-vs-actual divergence on every task is non-trivial.
+
+## Verbatim BEFORE blocks: Read-tool verification at plan-review (Phase 5.1 RC-39)
+
+When a plan provides a "Replace this verbatim" code block (often paired with a "with this verbatim" block), the BEFORE block is a contract — if it doesn't match the actual file byte-for-byte, the implementer's `Edit` will fail or (worse) silently transform the wrong code. Plan authors must read the actual file with the `Read` tool at plan-write time to verify the BEFORE block matches; plan reviewers must confirm this verification was done.
+
+**Verification** (at plan-review time): for each "Replace verbatim" block, ask the plan author to cite the file path + line number of the BEFORE text. If the plan author can't cite, run a `Read` against the cited path to confirm match before approving.
+
+**Rationale**: Phase 5.1 T10 plan Step 3 provided a "Replace with" code block; the corresponding BEFORE block (reflection inlined in `clearCaches()`) was stale. Current state had reflection extracted to a `clearCache(Object)` helper. The implementer caught the divergence via a pre-edit STOP per RC-26 discipline; an Option B pivot resulted. Verifying BEFORE blocks at plan-write time prevents this class of plan-implementation gap entirely.
