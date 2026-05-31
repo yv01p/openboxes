@@ -66,7 +66,8 @@ class PutAwayPage extends Component {
     }
   }
 
-  componentWillReceiveProps(nextProps) {
+  // eslint-disable-next-line camelcase
+  UNSAFE_componentWillReceiveProps(nextProps) {
     if (nextProps.putAwayTranslationsFetched) {
       if (!this.dataFetched) {
         this.dataFetched = true;

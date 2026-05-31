@@ -75,7 +75,8 @@ class CreateStockTransfer extends Component {
     this.props.hideInfoBar(InfoBar.STOCK_TRANSFER_DESCRIPTION);
   }
 
-  componentWillReceiveProps(nextProps) {
+  // eslint-disable-next-line camelcase
+  UNSAFE_componentWillReceiveProps(nextProps) {
     if (nextProps.stockTransferTranslationsFetched) {
       if (!this.dataFetched) {
         this.dataFetched = true;

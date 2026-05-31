@@ -26,15 +26,11 @@ jobs:
         with:
           node-version: '20'
           cache: npm
-      # --legacy-peer-deps mirrors the npm v6 resolver behavior the rest of the build
-      # uses (Gradle's :npm_run_bundle wraps npm-v6.14.18); strict `npm ci` under modern
-      # npm rejects pre-existing peer-dep mismatches like @testing-library/react-hooks@8
-      # vs react@16.8.6 that npm v6 silently tolerates. NPM_CONFIG_ENGINE_STRICT=false
-      # bypasses the EBADENGINE error from declared node:^14 vs runner's node 20 (same
-      # mismatch that's been in package.json since long before Phase 5 — Gradle's bundled
-      # npm v6 doesn't trip on it). Real fix is upgrading react + bumping engines —
-      # both out of Phase 5 scope.
-      - run: npm ci --legacy-peer-deps --no-audit --no-fund
+      # React peer-dep mismatch (@testing-library/react-hooks@8 vs react@16.8.6) resolved
+      # in Phase 5.1 T8 by bumping react+react-dom to 16.14.0 — --legacy-peer-deps no
+      # longer required. NPM_CONFIG_ENGINE_STRICT=false still needed for the node-engine
+      # vs CI-runner-node mismatch (declared node:^14 vs runner node 20); T9 bumps engines.
+      - run: npm ci --no-audit --no-fund
         env:
           NPM_CONFIG_ENGINE_STRICT: 'false'
       - run: npm run lint

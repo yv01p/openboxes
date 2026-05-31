@@ -359,7 +359,8 @@ class AddItemsPage extends Component {
     }
   }
 
-  componentWillReceiveProps(nextProps) {
+  // eslint-disable-next-line camelcase
+  UNSAFE_componentWillReceiveProps(nextProps) {
     if (nextProps.stockMovementTranslationsFetched && !this.dataFetched) {
       this.dataFetched = true;
 
@@ -717,8 +718,8 @@ class AddItemsPage extends Component {
         newExpiry: lineItem?.expirationDate,
       }];
 
-      const shouldUpdateExpirationDate =
-        await this.confirmExpirationDateSave(itemsWithMismatchedExpiry);
+      // eslint-disable-next-line max-len
+      const shouldUpdateExpirationDate = await this.confirmExpirationDateSave(itemsWithMismatchedExpiry);
       if (!shouldUpdateExpirationDate) {
         this.cancelSavingRequisitionItem(lineItems, rowIndex);
         return Promise.reject();
