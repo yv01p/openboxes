@@ -230,7 +230,6 @@ class LocationDetails extends Component {
     }
   }
 
-  // eslint-disable-next-line camelcase
   UNSAFE_componentWillReceiveProps(nextProps) {
     if (!this.dataFetched && nextProps.locConfTranslationsFetched) {
       this.dataFetched = true;

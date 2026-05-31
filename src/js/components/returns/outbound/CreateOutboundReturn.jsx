@@ -106,7 +106,6 @@ class CreateOutboundReturn extends Component {
     }
   }
 
-  // eslint-disable-next-line camelcase
   UNSAFE_componentWillReceiveProps(nextProps) {
     if (nextProps.outboundReturnsTranslationsFetched && nextProps.location.id) {
       if (!this.dataFetched) {

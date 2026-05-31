@@ -106,7 +106,6 @@ class DetailsModal extends Component {
     this.onOpen = this.onOpen.bind(this);
   }
 
-  // eslint-disable-next-line camelcase
   UNSAFE_componentWillReceiveProps(nextProps) {
     const {
       fieldConfig: { attributes, getDynamicAttr },

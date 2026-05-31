@@ -58,7 +58,6 @@ class StockTransferSecondPage extends Component {
     this.fetchStockTransfer();
   }
 
-  // eslint-disable-next-line camelcase
   UNSAFE_componentWillReceiveProps(nextProps) {
     if (nextProps.stockTransferTranslationsFetched && !this.dataFetched) {
       this.dataFetched = true;

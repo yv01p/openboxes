@@ -71,7 +71,6 @@ class PutAwaySecondPage extends Component {
     this.fetchPutAway();
   }
 
-  // eslint-disable-next-line camelcase
   UNSAFE_componentWillReceiveProps(nextProps) {
     showLocationChangedAlert(
       this.props.translate, this.state.location, nextProps.location,

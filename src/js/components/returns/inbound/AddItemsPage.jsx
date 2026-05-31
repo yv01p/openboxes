@@ -188,7 +188,6 @@ class AddItemsPage extends Component {
     }
   }
 
-  // eslint-disable-next-line camelcase
   UNSAFE_componentWillReceiveProps(nextProps) {
     if (nextProps.inboundReturnsTranslationsFetched && !this.dataFetched) {
       this.dataFetched = true;
@@ -419,8 +418,8 @@ class AddItemsPage extends Component {
       // After finding at least a single instance where expiration date we are trying to save
       // does not match the existing inventoryItem expiration date, we want to inform the user
       // that certain updates to th expiration date in the system will be performed
-      // eslint-disable-next-line max-len
-      const shouldUpdateExpirationDate = await this.confirmExpirationDateSave(itemsWithMismatchedExpiry);
+      const shouldUpdateExpirationDate =
+        await this.confirmExpirationDateSave(itemsWithMismatchedExpiry);
       if (!shouldUpdateExpirationDate) {
         return Promise.reject();
       }

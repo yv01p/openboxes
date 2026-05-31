@@ -45,6 +45,7 @@
     }],
     "operator-linebreak": "warn",
     "no-underscore-dangle": "off",
+    "camelcase": ["error", { "properties": "never", "ignoreDestructuring": false, "allow": ["^UNSAFE_"] }],
     "simple-import-sort/imports": [
       "error",
       {

@@ -13,7 +13,6 @@ class VerticalTabs extends Component {
     };
   }
 
-  // eslint-disable-next-line camelcase
   UNSAFE_componentWillReceiveProps(nextProps) {
     if (Object.keys(this.props.tabs).length !== Object.keys(nextProps.tabs).length) {
       this.setState({ activeTab: Object.keys(nextProps.tabs)[0] });

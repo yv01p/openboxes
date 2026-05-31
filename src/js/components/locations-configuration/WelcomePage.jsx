@@ -13,7 +13,6 @@ class WelcomePage extends Component {
     this.props.fetchTranslations('', 'locationsConfiguration');
   }
 
-  // eslint-disable-next-line camelcase
   UNSAFE_componentWillReceiveProps(nextProps) {
     if (this.props.locale && this.props.locale !== nextProps.locale) {
       this.props.fetchTranslations(nextProps.locale, 'locationsConfiguration');

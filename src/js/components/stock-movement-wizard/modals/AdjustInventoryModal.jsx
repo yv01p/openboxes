@@ -122,7 +122,6 @@ class AdjustInventoryModal extends Component {
     this.onSave = this.onSave.bind(this);
   }
 
-  // eslint-disable-next-line camelcase
   UNSAFE_componentWillReceiveProps(nextProps) {
     const {
       fieldConfig: { attributes, getDynamicAttr },

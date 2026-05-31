@@ -80,7 +80,6 @@ class PutAwayCheckPage extends Component {
     this.save = this.save.bind(this);
   }
 
-  // eslint-disable-next-line camelcase
   UNSAFE_componentWillReceiveProps(nextProps) {
     showLocationChangedAlert(
       this.props.translate, this.state.location, nextProps.location,

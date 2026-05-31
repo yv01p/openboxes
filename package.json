@@ -23,7 +23,7 @@
     "prepare": "husky install"
   },
   "lint-staged": {
-    "src/js/**/*.{js,jsx}": "eslint --fix"
+    "src/js/**/*.{js,jsx}": "eslint --fix --fix-type problem,suggestion"
   },
   "jest": {
     "verbose": true,

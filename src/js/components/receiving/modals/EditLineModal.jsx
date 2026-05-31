@@ -126,7 +126,6 @@ class EditLineModal extends Component {
     this.validate = this.validate.bind(this);
   }
 
-  // eslint-disable-next-line camelcase
   UNSAFE_componentWillReceiveProps(nextProps) {
     const {
       fieldConfig: { attributes, getDynamicAttr },
@@ -206,8 +205,8 @@ class EditLineModal extends Component {
     });
 
     if (itemsWithMismatchedExpiry.length > 0) {
-      // eslint-disable-next-line max-len
-      const shouldUpdateExpirationDate = await this.props.confirmExpirationDateSave(itemsWithMismatchedExpiry);
+      const shouldUpdateExpirationDate =
+        await this.props.confirmExpirationDateSave(itemsWithMismatchedExpiry);
       if (!shouldUpdateExpirationDate) {
         return Promise.reject();
       }
