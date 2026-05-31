@@ -59,3 +59,27 @@ When a duplication propagates cleanly across N services with zero per-service va
 **Rationale**: Phase 4 retro flagged JWT triple-copy as "STRONGLY MOTIVATED" at the 4th copy; Phase 5 confirmed at the 5th (clean 3-line package rename across 3 files). Phase 5.1 extracted to `services/jwt-auth-common`. Don't wait for the 6th copy.
 
 **Application**: future N-service duplication patterns (e.g., shared OpenAPI config, shared TestContainers base class, shared @ControllerAdvice exception handlers) should trigger this rule at copy 4 — promote to next-phase B-disposition.
+
+## Gradle plugin version compatibility (Phase 5.1 RC-31)
+
+When reviewing plans that bump a Gradle plugin's version, verify the new plugin major's minimum-Gradle-version requirement against the project's actual Gradle version (`gradle/wrapper/gradle-wrapper.properties:distributionUrl`). Plugin majors routinely raise their Gradle floor; a plan that names "latest plugin" without this check can land an apply-time failure that no test catches before T-commit.
+
+**Verification**: read the plugin's CHANGELOG (or compatibility section in its README) for the picked major. Cite the result in the plan body (e.g., "node-gradle plugin 1.5.3 supports Gradle 4+, satisfies the project's `gradle-wrapper.properties` at 4.10.3").
+
+**Rationale**: Phase 5.1 T9 plan prescribed `com.github.node-gradle.node:7.0.1`; plugin v7 requires Gradle ≥5 via the `DirectoryProperty` API. The project is locked to Gradle 4.10.3 by Grails 3.x compat. BUILD FAILED at apply-plugin time; T9 pivoted to plugin v1.5.3.
+
+## Sentinel-rule pre-verification (Phase 5.1 RC-36)
+
+When a plan prescribes a sentinel test (e.g., "introduce a one-line lint violation to prove the pre-commit hook blocks it"), verify the chosen sentinel string actually triggers the rule the plan names against the project's actual lint config — not against an idealized ruleset. Multiple rules may fire on the same string; the first one wins.
+
+**Verification**: at plan-review time, paste the prescribed sentinel into the target file and run the project's linter locally; confirm the named rule appears in the violation list (preferably as the only violation, or the first one). If a different rule fires first, either change the sentinel or update the plan to name the actually-triggered rule.
+
+**Rationale**: Phase 5.1 T9 plan Step 7 named `max-len` as the sentinel rule for the husky pre-commit hook test; the implementer's sentinel string actually triggered `no-unused-vars` + `quotes` first. The hook chain was exercised correctly, but the plan-vs-actual rule mismatch obscured what was being tested.
+
+## `throws X` removal cascade (Phase 5.1 RC-40)
+
+When a refactor removes a `throws X` from a method signature, audit all calling-method `throws` declarations for now-unreachable exceptions. Java doesn't flag stale `throws` declarations as errors, but they bit-rot the signature contract and mislead callers into wrapping calls in try-catch blocks that can never fire.
+
+**Verification**: when reviewing a change that drops `throws X` from method M, grep for callers of M (`grep -rn "M(" --include="*.java"`). For each caller, check whether its own `throws` clause still needs to declare X — and whether the caller's callers transitively still need to.
+
+**Rationale**: Phase 5.1 T10 refactor extracted reflection-using cache-clearing into a helper and de-reflected it. The helper's `throws Exception` signature could be dropped; the calling test method's `throws Exception` was also now stale. The implementer caught the cascade only by being rigorous; the plan didn't prompt the check.
