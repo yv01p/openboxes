@@ -27,7 +27,8 @@ openboxes:
     secret: ${OPENBOXES_JWT_SECRET}
 
 # Surface JwtCookieAuthFilter's rejection log (T7-M1). DEBUG is fine because the line
-# logs only the exception class name, never the token or claim contents.
+# logs only the exception class name, never the token or claim contents. Filter relocated
+# to jwt-auth-common starter at Phase 5.1; logger package follows.
 logging:
   level:
-    org.openboxes.document.security: DEBUG
+    org.openboxes.auth.common: DEBUG
