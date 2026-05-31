@@ -41,4 +41,6 @@ The project uses a 2-layer defense against ESLint regressions:
 
 **Empirical motivation**: Phase 5 RC-26 — 6 ESLint `max-len` violations from T9 React URL changes silently passed local Gradle build (cached `:npm_run_bundle` UP-TO-DATE hid them) but failed fresh CI 6 minutes into prepareDocker. Layered defense prevents the next iteration of this trap.
 
+**Benign noise on non-JS commits** (Phase 5.1 RC-41): lint-staged is configured for `src/js/**/*.{js,jsx}` only. On commits that touch only Java / Groovy / `.md` / Gradle / `.github/` files, the pre-commit hook emits `lint-staged could not find any staged files matching configured tasks`. This is intended behavior — the hook ran, lint-staged correctly identified zero JS files to lint, and the commit proceeds. The message is NOT "hooks were skipped"; it's "hooks ran and had nothing to do".
+
 **When adding a new lint rule**: update `.eslintrc` (the project's ESLint config; `eslint.config.js` would apply if/when migrated to ESLint 9+ flat config) once; both L1 and L2 inherit automatically.
