@@ -62,6 +62,8 @@ When regenerating `package-lock.json` for the project, use Gradle's bundled npm 
 
 **Fix**: any task that bumps a frontend dep + needs to regenerate package-lock.json MUST use Gradle's bundled npm, OR bump the Gradle node toolchain first (Phase 5.1 T9 does the latter; subsequent phases can use host npm directly once the toolchain matches).
 
+**Verification before commit** (Phase 5.1 RC-42): after regenerating the lockfile via the right npm version, verify with `npm ci --dry-run` (or a full `npm ci` against a clean `node_modules/`) BEFORE committing. `:npm_run_bundle` and the underlying `npm install` are permissive — they mutate the lockfile to satisfy `package.json` rather than failing — so a lockfile that passes them may still be rejected by CI's `npm ci` (strict; fails on any `package.json` ↔ `package-lock.json` drift). Phase 5.1 T9 amend 2 hit this trap: a `:npmInstall`-regenerated lockfile passed local `:npm_run_bundle` but failed CI with `EUSAGE` on `@types/react@19.2.7` + `acorn@7.4.1` + `babel-plugin-macros@2.8.0` mismatches. Resolved at commit `d5dde90f7` via clean regen with host npm 11 (post-RC-28 Node 22 bump put host npm in the supported range) plus a `npm ci` verification before push.
+
 ## Dep `engines.node` floor check (Phase 5.1 RC-32)
 
 When a plan picks a major version for a runtime / tool dep (e.g., `"lint-staged": "^17"`), query `npm view <pkg>@<picked-major> engines.node` BEFORE plan-write and verify the dep's `engines.node` floor is satisfied by the project's `engines.node` declaration. Tool deps in particular raise their Node floor between minor versions inside a major.
