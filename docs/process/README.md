@@ -41,4 +41,4 @@ The project uses a 2-layer defense against ESLint regressions:
 
 **Empirical motivation**: Phase 5 RC-26 — 6 ESLint `max-len` violations from T9 React URL changes silently passed local Gradle build (cached `:npm_run_bundle` UP-TO-DATE hid them) but failed fresh CI 6 minutes into prepareDocker. Layered defense prevents the next iteration of this trap.
 
-**When adding a new lint rule**: update `eslint.config.js` (or `.eslintrc`) once; both L1 and L2 inherit automatically.
+**When adding a new lint rule**: update `.eslintrc` (the project's ESLint config; `eslint.config.js` would apply if/when migrated to ESLint 9+ flat config) once; both L1 and L2 inherit automatically.
