@@ -9,9 +9,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
-// FD#7: app-level cache. Plan calls for "refresh-on-write" semantics; per T1 audit CategoryService
-// is GET-only today, so refresh() is exposed for future Category write paths (currently GET-only per T1).
-// Internally identical to UnitOfMeasureCache (refresh-on-miss) until writes arrive.
+// FD#7: app-level cache. Plan calls for "refresh-on-write" semantics; CategoryService is GET-only today (per T1 audit),
+// so refresh() is package-private and behaves like UnitOfMeasureCache (refresh-on-miss) until writes arrive.
 @Component
 public class CategoryCache {
     private final CategoryRepository repo;
