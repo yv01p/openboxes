@@ -15,7 +15,7 @@ jobs:
       - name: Configure Node
         uses: actions/setup-node@v5
         with:
-          node-version: 14
+          node-version: '22'
           cache: npm
 
       - run: npm ci

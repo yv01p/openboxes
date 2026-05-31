@@ -369,7 +369,7 @@ node {
     distBaseUrl = 'https://nodejs.org/dist'
     download = true
     version = '22.22.3'   // current Node 22 LTS ("Jod") as of 2026-05-31; Node 18 EOL'd Apr 2025
-    // npmVersion omitted — uses npm bundled with Node 22 (10.9.x)
+    // npmVersion omitted — uses npm bundled with Node toolchain above
 }
 
 processResources {
