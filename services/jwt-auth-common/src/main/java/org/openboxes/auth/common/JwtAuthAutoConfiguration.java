@@ -2,6 +2,7 @@ package org.openboxes.auth.common;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 
@@ -14,11 +15,13 @@ import org.springframework.context.annotation.Bean;
 public class JwtAuthAutoConfiguration {
 
     @Bean
+    @ConditionalOnMissingBean
     public JwtService jwtService(@Value("${openboxes.jwt.secret}") String secret) {
         return new JwtService(secret);
     }
 
     @Bean
+    @ConditionalOnMissingBean
     public JwtCookieAuthFilter jwtCookieAuthFilter(JwtService jwtService) {
         return new JwtCookieAuthFilter(jwtService);
     }
