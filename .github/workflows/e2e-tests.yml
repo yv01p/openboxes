@@ -24,15 +24,14 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '22'
           cache: npm
       # React peer-dep mismatch (@testing-library/react-hooks@8 vs react@16.8.6) resolved
       # in Phase 5.1 T8 by bumping react+react-dom to 16.14.0 — --legacy-peer-deps no
-      # longer required. NPM_CONFIG_ENGINE_STRICT=false still needed for the node-engine
-      # vs CI-runner-node mismatch (declared node:^14 vs runner node 20); T9 bumps engines.
+      # longer required. NPM_CONFIG_ENGINE_STRICT removed in Phase 5.1 T9 — package.json
+      # engines now declares node:>=22 (Node 18 EOL'd Apr 2025; lint-staged@17 requires
+      # Node ≥22.22.1), matching the CI runner's node-version: '22'.
       - run: npm ci --no-audit --no-fund
-        env:
-          NPM_CONFIG_ENGINE_STRICT: 'false'
       - run: npm run lint
 
   e2e:
@@ -80,7 +79,7 @@ jobs:
         run: docker exec -i openboxes-db mariadb -u root -proot openboxes < docker/init-baseline.sql
       - uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '22'
       - name: Install Playwright
         working-directory: e2e
         run: |
