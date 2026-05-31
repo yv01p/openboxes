@@ -1,0 +1,22 @@
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+    implementation 'io.jsonwebtoken:jjwt-api:0.12.5'
+    runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.5'
+    runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.5'
+    // Plan-defect fix: JwtCookieAuthFilter uses jakarta.servlet.* types
+    // (HttpServletRequest, FilterChain, etc.) which are NOT transitively
+    // provided by spring-boot-starter-security. They ship with the servlet
+    // container (tomcat-embed-core via spring-boot-starter-web) which every
+    // consumer service already has. compileOnly is correct here: required
+    // to compile, not redistributed (consumers' web starter supplies it at
+    // runtime). Version managed by Spring Boot BOM.
+    compileOnly 'jakarta.servlet:jakarta.servlet-api'
+}
+
+// Library subproject — no main() class; disable bootJar to avoid
+// "Main class name has not been configured" failure (the parent
+// services/build.gradle subprojects block applies org.springframework.boot
+// unconditionally, which auto-enables bootJar). Enable jar so consumers
+// can resolve the dep via project(':jwt-auth-common').
+bootJar { enabled = false }
+jar { enabled = true }
