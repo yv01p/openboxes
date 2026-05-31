@@ -24,14 +24,14 @@ public class AuthService {
     private final UserRepository userRepository;
     private final LocationRepository locationRepository;
     private final OpenboxesPasswordEncoder passwordEncoder;
-    private final JwtService jwtService;
+    private final JwtIssuerService jwtService;
     private final PasswordComplexityValidator validator;
     private final RoleTypeCache roleTypeCache;
 
     public AuthService(UserRepository userRepository,
                        LocationRepository locationRepository,
                        OpenboxesPasswordEncoder passwordEncoder,
-                       JwtService jwtService,
+                       JwtIssuerService jwtService,
                        PasswordComplexityValidator validator,
                        RoleTypeCache roleTypeCache) {
         this.userRepository = userRepository;

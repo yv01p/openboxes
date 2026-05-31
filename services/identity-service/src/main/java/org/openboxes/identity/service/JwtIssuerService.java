@@ -11,15 +11,15 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Date;
 import java.util.List;
-import java.util.Map;
 
+// Issuer-side only. Validator-side (validate() + COOKIE_NAME) moved
+// to org.openboxes.auth.common.JwtService (starter) at Phase 5.1.
 @Service
-public class JwtService {
-    public static final String COOKIE_NAME = "obx_token";
+public class JwtIssuerService {
     public static final long TOKEN_LIFETIME_SECONDS = 8L * 3600L;
     private final SecretKey signingKey;
 
-    public JwtService(@Value("${openboxes.jwt.secret}") String secret) {
+    public JwtIssuerService(@Value("${openboxes.jwt.secret}") String secret) {
         this.signingKey = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
     }
 
@@ -34,14 +34,5 @@ public class JwtService {
             .expiration(Date.from(exp))
             .signWith(signingKey)
             .compact();
-    }
-
-    public Map<String, Object> validate(String token) {
-        try {
-            return Jwts.parser().verifyWith(signingKey).build()
-                .parseSignedClaims(token).getPayload();
-        } catch (Exception e) {
-            return null;
-        }
     }
 }
