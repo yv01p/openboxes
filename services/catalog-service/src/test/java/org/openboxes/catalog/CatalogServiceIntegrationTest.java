@@ -8,6 +8,7 @@ import org.openboxes.catalog.cache.UnitOfMeasureCache;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -16,7 +17,10 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -347,5 +351,105 @@ class CatalogServiceIntegrationTest {
             .andExpect(jsonPath("$.data.product").doesNotExist())
             .andExpect(jsonPath("$.data.productId").value("p-bandage"))
             .andExpect(jsonPath("$.data.name").value("pansement"));
+    }
+
+    // ---------------------------------------------------------------
+    // ProductSupplier CRUD (T2) — first write path + first JPA audit infra (FD#8 Option-A)
+    // ---------------------------------------------------------------
+
+    @Test void productSupplierList_returnsSeededRow() throws Exception {
+        mvc.perform(get("/api/productSuppliers").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.length()").value(org.hamcrest.Matchers.greaterThanOrEqualTo(1)))
+            .andExpect(jsonPath("$.data[?(@.id == 'ps-bandage-acme')]").exists());
+    }
+
+    @Test void productSupplierGet_404OnMissing() throws Exception {
+        mvc.perform(get("/api/productSuppliers/nonexistent").cookie(authCookie()))
+            .andExpect(status().isNotFound());
+    }
+
+    @Test void productSupplierGet_dtoIsFlat_noNestedEntities() throws Exception {
+        mvc.perform(get("/api/productSuppliers/ps-bandage-acme").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.id").value("ps-bandage-acme"))
+            .andExpect(jsonPath("$.data.product").doesNotExist())
+            .andExpect(jsonPath("$.data.supplier").doesNotExist())
+            .andExpect(jsonPath("$.data.manufacturer").doesNotExist())
+            .andExpect(jsonPath("$.data.createdBy").doesNotExist())
+            .andExpect(jsonPath("$.data.updatedBy").doesNotExist())
+            .andExpect(jsonPath("$.data.productId").value("p-bandage"))
+            .andExpect(jsonPath("$.data.supplierId").value("org-acme-placeholder"));
+    }
+
+    @Test void productSupplierPost_createsRow_withGeneratedId() throws Exception {
+        String json = "{\"name\":\"Bandage from Globex\",\"productId\":\"p-bandage\"," +
+            "\"supplierId\":\"org-globex-placeholder\",\"code\":\"PS-BND-GLX\",\"active\":true}";
+        mvc.perform(post("/api/productSuppliers")
+                .content(json).contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.id").isString())
+            .andExpect(jsonPath("$.data.name").value("Bandage from Globex"))
+            .andExpect(jsonPath("$.data.productId").value("p-bandage"))
+            .andExpect(jsonPath("$.data.supplierId").value("org-globex-placeholder"))
+            // tiered_pricing is NOT NULL: omitted in the request, defaults to false.
+            .andExpect(jsonPath("$.data.tieredPricing").value(false));
+    }
+
+    @Test void productSupplierPost_populatesCreatedByIdFromJwt() throws Exception {
+        // FD#8 Option-A end-to-end proof: JwtAuditorAware maps the JWT subject ("test-user") into
+        // created_by_id via @CreatedBy. POST, then GET the created row and assert the audit field.
+        String json = "{\"name\":\"Bandage from Initech\",\"productId\":\"p-bandage\"," +
+            "\"supplierId\":\"org-initech-placeholder\"}";
+        var result = mvc.perform(post("/api/productSuppliers")
+                .content(json).contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.createdById").value("test-user"))
+            .andReturn();
+        String id = com.jayway.jsonpath.JsonPath.read(result.getResponse().getContentAsString(), "$.data.id");
+        mvc.perform(get("/api/productSuppliers/" + id).cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.createdById").value("test-user"))
+            .andExpect(jsonPath("$.data.updatedById").value("test-user"));
+    }
+
+    @Test void productSupplierPut_updatesRow() throws Exception {
+        String json = "{\"name\":\"Bandage Updated\",\"productId\":\"p-bandage\"," +
+            "\"supplierId\":\"org-acme-placeholder\",\"active\":false}";
+        mvc.perform(put("/api/productSuppliers/ps-bandage-acme")
+                .content(json).contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.id").value("ps-bandage-acme"))
+            .andExpect(jsonPath("$.data.name").value("Bandage Updated"))
+            .andExpect(jsonPath("$.data.active").value(false));
+        mvc.perform(get("/api/productSuppliers/ps-bandage-acme").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.name").value("Bandage Updated"));
+    }
+
+    @Test void productSupplierPut_404OnMissing() throws Exception {
+        String json = "{\"name\":\"Nope\",\"productId\":\"p-bandage\"}";
+        mvc.perform(put("/api/productSuppliers/nonexistent")
+                .content(json).contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
+            .andExpect(status().isNotFound());
+    }
+
+    @Test void productSupplierDelete_thenGet404() throws Exception {
+        // Create a throwaway row to delete (keeps the seeded row available for other tests).
+        String json = "{\"name\":\"Bandage Disposable\",\"productId\":\"p-bandage\"}";
+        var result = mvc.perform(post("/api/productSuppliers")
+                .content(json).contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andReturn();
+        String id = com.jayway.jsonpath.JsonPath.read(result.getResponse().getContentAsString(), "$.data.id");
+        mvc.perform(delete("/api/productSuppliers/" + id).cookie(authCookie()))
+            .andExpect(status().isNoContent());
+        mvc.perform(get("/api/productSuppliers/" + id).cookie(authCookie()))
+            .andExpect(status().isNotFound());
+    }
+
+    @Test void productSupplierDelete_404OnMissing() throws Exception {
+        mvc.perform(delete("/api/productSuppliers/nonexistent").cookie(authCookie()))
+            .andExpect(status().isNotFound());
     }
 }

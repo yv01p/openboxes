@@ -59,3 +59,9 @@ INSERT INTO product_group_product (product_id, product_group_id) VALUES
 INSERT INTO synonym (id, name, locale, synonym_type_code, product_id) VALUES
     ('syn-bandage-fr', 'pansement', 'fr', 'DISPLAY_NAME', 'p-bandage'),
     ('syn-syringe-fr', 'seringue', 'fr', 'DISPLAY_NAME', 'p-syringe');
+
+-- 1 ProductSupplier (T2). supplier_id is a free String in create-mode (no FK to org-service);
+-- product_id references the seeded p-bandage. All NOT NULL columns the entity maps are populated:
+-- name, product_id, tiered_pricing, version, date_created, last_updated.
+INSERT INTO product_supplier (id, code, name, product_id, supplier_id, active, tiered_pricing, version, date_created, last_updated) VALUES
+    ('ps-bandage-acme', 'PS-BND-ACME', 'Bandage from Acme', 'p-bandage', 'org-acme-placeholder', 1, 0, 0, NOW(), NOW());
