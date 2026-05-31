@@ -59,18 +59,9 @@ class CatalogServiceIntegrationTest {
     // via real nginx → Tomcat after a catalog-service restart all return populated supportedActivities.
     // (Retracts the misleading "production caching limitation" framing in commit 36c25a4d0's body.)
     @BeforeEach
-    void clearCaches() throws Exception {
-        clearCache(productTypeCache);
-        clearCache(attributeCache);
-    }
-
-    private static void clearCache(Object cache) throws Exception {
-        var byIdField = cache.getClass().getDeclaredField("byId");
-        byIdField.setAccessible(true);
-        ((java.util.Map<?, ?>) byIdField.get(cache)).clear();
-        var loadedField = cache.getClass().getDeclaredField("loaded");
-        loadedField.setAccessible(true);
-        loadedField.setBoolean(cache, false);
+    void clearCaches() {
+        productTypeCache.clear();
+        attributeCache.clear();
     }
 
     private String validToken() {

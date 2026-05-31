@@ -41,4 +41,11 @@ public class ProductTypeCache {
         repo.findAll().forEach(pt -> byId.put(pt.getId(), pt));
         loaded = true;
     }
+
+    // Test-isolation hook: replaces the prior reflective clearCaches() helper.
+    // Public visibility intentional — accessed from CatalogServiceIntegrationTest.
+    public synchronized void clear() {
+        byId.clear();
+        loaded = false;
+    }
 }

@@ -41,4 +41,11 @@ public class UnitOfMeasureCache {
         repo.findAll().forEach(u -> byId.put(u.getId(), u));
         loaded = true;
     }
+
+    // Test-isolation hook: replaces the prior reflective clearCaches() helper.
+    // Public visibility intentional — accessed from CatalogServiceIntegrationTest.
+    public synchronized void clear() {
+        byId.clear();
+        loaded = false;
+    }
 }

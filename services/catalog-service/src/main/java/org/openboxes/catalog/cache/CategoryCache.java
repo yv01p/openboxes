@@ -38,10 +38,17 @@ public class CategoryCache {
         return List.copyOf(byId.values());
     }
 
-    // refresh() exposed for future Category write paths (currently GET-only per T1)
-    public synchronized void refresh() {
+    // Package-private until Category write paths land (Phase 5.5+); expose publicly when CategoryService.save() introduces a write flow that needs cache refresh.
+    synchronized void refresh() {
         byId.clear();
         repo.findAll().forEach(c -> byId.put(c.getId(), c));
         loaded = true;
+    }
+
+    // Test-isolation hook: replaces the prior reflective clearCaches() helper.
+    // Public visibility intentional — accessed from CatalogServiceIntegrationTest.
+    public synchronized void clear() {
+        byId.clear();
+        loaded = false;
     }
 }

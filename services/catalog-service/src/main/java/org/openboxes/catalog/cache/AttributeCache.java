@@ -41,4 +41,11 @@ public class AttributeCache {
         repo.findAll().forEach(a -> byId.put(a.getId(), a));
         loaded = true;
     }
+
+    // Test-isolation hook: replaces the prior reflective clearCaches() helper.
+    // Public visibility intentional — accessed from CatalogServiceIntegrationTest.
+    public synchronized void clear() {
+        byId.clear();
+        loaded = false;
+    }
 }
