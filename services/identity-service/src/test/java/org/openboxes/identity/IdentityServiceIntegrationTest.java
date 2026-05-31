@@ -10,8 +10,8 @@ import org.openboxes.identity.entity.PasswordResetToken;
 import org.openboxes.identity.entity.User;
 import org.openboxes.identity.repository.PasswordResetTokenRepository;
 import org.openboxes.identity.repository.UserRepository;
-import org.openboxes.auth.common.JwtService;            // for COOKIE_NAME refs at :125,156,160,170,174,184,191,200,263,275,284,370,380
-import org.openboxes.identity.service.JwtIssuerService; // for @Autowired field
+import org.openboxes.auth.common.JwtService;            // starter — for COOKIE_NAME
+import org.openboxes.identity.service.JwtIssuerService; // local — for @Autowired issuer
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
