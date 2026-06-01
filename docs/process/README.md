@@ -7,6 +7,7 @@ Codified lessons accumulated across migration phases. Future plan-writers + SDD 
 - `sdd-reviewer-checklist.md` — additional checks for spec/code reviewers (e.g., JPA SINGLE_TABLE nullability)
 - `plan-template-defects.md` — known defects in plan templates (e.g., T12 done-gate scripts)
 - `plan-ordering-rules.md` — task-ordering invariants for plans (compose-modifying ⇒ CI workflow rule + file-conflict rule)
+- `synthetic-payload-blind-spot.md` — frontend-facing migrations must test against real SPA payload shapes (request + response), not synthetic JSON shaped to the new DTO
 
 ## How to add a new lesson
 
