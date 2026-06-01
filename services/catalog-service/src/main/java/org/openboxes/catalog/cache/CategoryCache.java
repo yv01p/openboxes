@@ -9,8 +9,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
-// FD#7: app-level cache. Plan calls for "refresh-on-write" semantics; CategoryService is GET-only today (per T1 audit),
-// so refresh() is package-private and behaves like UnitOfMeasureCache (refresh-on-miss) until writes arrive.
+// FD#7: app-level cache. CategoryService writes (T12) invalidate via clear(); reads repopulate on the
+// next access (refresh-on-miss / refresh-on-empty), like UnitOfMeasureCache.
 @Component
 public class CategoryCache {
     private final CategoryRepository repo;
@@ -37,15 +37,15 @@ public class CategoryCache {
         return List.copyOf(byId.values());
     }
 
-    // Package-private until Category write paths land (Phase 5.5+); expose publicly when CategoryService.save() introduces a write flow that needs cache refresh.
-    synchronized void refresh() {
+    public synchronized void refresh() {
         byId.clear();
         repo.findAll().forEach(c -> byId.put(c.getId(), c));
         loaded = true;
     }
 
-    // Test-isolation hook: replaces the prior reflective clearCaches() helper.
-    // Public visibility intentional — accessed from CatalogServiceIntegrationTest.
+    // Write-invalidation + test-isolation hook. Two callers: CategoryService write paths invalidate
+    // after commit (via clearCacheAfterCommit), and CatalogServiceIntegrationTest clears per-test.
+    // Public visibility intentional.
     public synchronized void clear() {
         byId.clear();
         loaded = false;

@@ -3,6 +3,7 @@ package org.openboxes.catalog;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.openboxes.catalog.cache.AttributeCache;
+import org.openboxes.catalog.cache.CategoryCache;
 import org.openboxes.catalog.cache.ProductCatalogCache;
 import org.openboxes.catalog.cache.ProductCatalogItemCache;
 import org.openboxes.catalog.cache.ProductTypeCache;
@@ -57,6 +58,7 @@ class CatalogServiceIntegrationTest {
     @Autowired UnitOfMeasureCache uomCache;
     @Autowired ProductTypeCache productTypeCache;
     @Autowired AttributeCache attributeCache;
+    @Autowired CategoryCache categoryCache;
     @Autowired ProductCatalogCache productCatalogCache;
     @Autowired ProductCatalogItemCache productCatalogItemCache;
     // T11 UnitOfMeasureConversion is CACHE-backed (heuristic cache per T1 audit §5/§8) — cache cleared
@@ -87,9 +89,25 @@ class CatalogServiceIntegrationTest {
     void clearCaches() {
         productTypeCache.clear();
         attributeCache.clear();
+        categoryCache.clear();
         productCatalogCache.clear();
         productCatalogItemCache.clear();
         unitOfMeasureConversionCache.clear();
+    }
+
+    // T12 write-test safety net: integration tests are NOT @Transactional, so every category a write
+    // test POSTs COMMITS to the shared TestContainers DB. A test that fails an assertion BEFORE its
+    // inline cleanup delete would leak a 4th row and cascade-fail categoryList_returns3() (asserts
+    // exactly 3), masking the real failure. Each write test registers the id it creates here; this
+    // teardown deletes them unconditionally (ignoring 404s), so a leak can never cross test boundaries.
+    private final java.util.List<String> createdCategoryIds = new java.util.ArrayList<>();
+
+    @org.junit.jupiter.api.AfterEach
+    void cleanupCreatedCategories() throws Exception {
+        for (String id : createdCategoryIds) {
+            mvc.perform(delete("/api/category/" + id).cookie(authCookie()));  // 204 or 404 — both fine
+        }
+        createdCategoryIds.clear();
     }
 
     private String validToken() {
@@ -189,6 +207,117 @@ class CatalogServiceIntegrationTest {
             .andExpect(jsonPath("$.data.id").value("cat-root"))
             .andExpect(jsonPath("$.data.isRoot").value(true))
             .andExpect(jsonPath("$.data.parentCategoryId").doesNotExist());
+    }
+
+    // ---------------------------------------------------------------
+    // T12: Category writes (full CRUD). Integration tests are NOT @Transactional — every write COMMITS
+    // to the shared TestContainers DB and persists across methods, and JUnit method order is arbitrary.
+    // categoryList_returns3() asserts exactly 3 seeded rows, so EVERY write test uses a unique name,
+    // tracks each created id in createdCategoryIds the moment it is minted, and never asserts a global
+    // count. The @AfterEach (cleanupCreatedCategories) deletes tracked ids unconditionally, so even a
+    // test that fails an assertion before its inline delete cannot leak a 4th row into a sibling test.
+    // ---------------------------------------------------------------
+
+    @Test void categoryPost_createsRow_withGeneratedId() throws Exception {
+        String name = "T12 Smoke Cat post-" + java.util.UUID.randomUUID();
+        String json = "{\"name\":\"" + name + "\",\"parentCategoryId\":\"cat-root\"}";
+        var result = mvc.perform(post("/api/category")
+                .content(json).contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.id").isString())
+            .andExpect(jsonPath("$.data.name").value(name))
+            .andExpect(jsonPath("$.data.parentCategoryId").value("cat-root"))
+            .andReturn();
+        String id = com.jayway.jsonpath.JsonPath.read(result.getResponse().getContentAsString(), "$.data.id");
+        createdCategoryIds.add(id);  // track for @AfterEach teardown even if a later assertion throws
+        mvc.perform(get("/api/category/" + id).cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.name").value(name));
+        // Self-clean: remove the 4th row so categoryList_returns3() stays deterministic.
+        mvc.perform(delete("/api/category/" + id).cookie(authCookie()))
+            .andExpect(status().isNoContent());
+    }
+
+    @Test void categoryPut_updatesRow() throws Exception {
+        String name = "T12 Smoke Cat put-" + java.util.UUID.randomUUID();
+        String json = "{\"name\":\"" + name + "\"}";
+        var result = mvc.perform(post("/api/category")
+                .content(json).contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andReturn();
+        String id = com.jayway.jsonpath.JsonPath.read(result.getResponse().getContentAsString(), "$.data.id");
+        createdCategoryIds.add(id);  // track for @AfterEach teardown even if a later assertion throws
+        String newName = name + " UPDATED";
+        mvc.perform(put("/api/category/" + id)
+                .content("{\"name\":\"" + newName + "\"}").contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.id").value(id))
+            .andExpect(jsonPath("$.data.name").value(newName));
+        mvc.perform(get("/api/category/" + id).cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.name").value(newName));
+        // Self-clean.
+        mvc.perform(delete("/api/category/" + id).cookie(authCookie()))
+            .andExpect(status().isNoContent());
+    }
+
+    @Test void categoryPut_404OnMissing() throws Exception {
+        String json = "{\"name\":\"Nope\"}";
+        mvc.perform(put("/api/category/nonexistent")
+                .content(json).contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
+            .andExpect(status().isNotFound());
+    }
+
+    @Test void categoryDelete_thenGet404() throws Exception {
+        String name = "T12 Smoke Cat del-" + java.util.UUID.randomUUID();
+        var result = mvc.perform(post("/api/category")
+                .content("{\"name\":\"" + name + "\"}").contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andReturn();
+        String id = com.jayway.jsonpath.JsonPath.read(result.getResponse().getContentAsString(), "$.data.id");
+        createdCategoryIds.add(id);  // track for @AfterEach teardown even if a later assertion throws
+        // Delete is the self-clean.
+        mvc.perform(delete("/api/category/" + id).cookie(authCookie()))
+            .andExpect(status().isNoContent());
+        mvc.perform(get("/api/category/" + id).cookie(authCookie()))
+            .andExpect(status().isNotFound());
+    }
+
+    @Test void categoryDelete_404OnMissing() throws Exception {
+        mvc.perform(delete("/api/category/nonexistent").cookie(authCookie()))
+            .andExpect(status().isNotFound());
+    }
+
+    @Test void categoryWrite_invalidatesCache() throws Exception {
+        // Populate the cache with the seeded set.
+        mvc.perform(get("/api/category").cookie(authCookie()))
+            .andExpect(status().isOk());
+        // POST a new row; save() must clear() the cache so the next list read repopulates and shows it.
+        String name = "T12 Smoke Cat cache-" + java.util.UUID.randomUUID();
+        var result = mvc.perform(post("/api/category")
+                .content("{\"name\":\"" + name + "\"}").contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andReturn();
+        String id = com.jayway.jsonpath.JsonPath.read(result.getResponse().getContentAsString(), "$.data.id");
+        createdCategoryIds.add(id);  // track for @AfterEach teardown even if a later assertion throws
+        // The new category IS now present in the list (proves write cleared the cache).
+        mvc.perform(get("/api/category").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data[?(@.id=='" + id + "')]").exists());
+        // DELETE then re-list: the row is gone (proves delete also invalidated the cache). Also self-cleans.
+        mvc.perform(delete("/api/category/" + id).cookie(authCookie()))
+            .andExpect(status().isNoContent());
+        mvc.perform(get("/api/category").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data[?(@.id=='" + id + "')]").doesNotExist());
+    }
+
+    @Test void categoryPost_missingName_returns409() throws Exception {
+        // name is NOT NULL with no DB default → DataIntegrityViolationException → @RestControllerAdvice → 409.
+        // (Mirrors productSupplierPost_missingNotNullProductId_returns409.)
+        mvc.perform(post("/api/category")
+                .content("{}").contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
+            .andExpect(status().isConflict());
     }
 
     // ---------------------------------------------------------------
@@ -676,6 +805,7 @@ class CatalogServiceIntegrationTest {
             .andExpect(jsonPath("$.data.createdById").value("test-user"))
             .andReturn();
         String id = com.jayway.jsonpath.JsonPath.read(result.getResponse().getContentAsString(), "$.data.id");
+        createdCategoryIds.add(id);  // track for @AfterEach teardown even if a later assertion throws
         mvc.perform(get("/api/productSuppliers/" + id).cookie(authCookie()))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.createdById").value("test-user"))
@@ -711,6 +841,7 @@ class CatalogServiceIntegrationTest {
             .andExpect(status().isOk())
             .andReturn();
         String id = com.jayway.jsonpath.JsonPath.read(result.getResponse().getContentAsString(), "$.data.id");
+        createdCategoryIds.add(id);  // track for @AfterEach teardown even if a later assertion throws
         mvc.perform(delete("/api/productSuppliers/" + id).cookie(authCookie()))
             .andExpect(status().isNoContent());
         mvc.perform(get("/api/productSuppliers/" + id).cookie(authCookie()))

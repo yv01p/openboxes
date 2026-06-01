@@ -23,4 +23,22 @@ public record CategoryDto(
             c.getGlAccountId()
         );
     }
+
+    // Maps flat scalar/FK-string fields onto an entity. parentCategory is resolved+set by the service
+    // from parentCategoryId; id/version/audit timestamps are managed by the service/Hibernate/auditing.
+    // PUT is full-replace: a request that omits a field resets it (e.g. omitting isRoot demotes a root
+    // to false), so callers must send the complete desired state. Mirrors ProductSupplierDto.applyTo.
+    public void applyTo(Category c) {
+        c.setName(name);
+        c.setDescription(description);
+        c.setSortOrder(sortOrder);
+        c.setIsRoot(isRoot != null ? isRoot : false);   // is_root is nullable but default false in the domain
+        c.setGlAccountId(glAccountId);
+    }
+
+    public Category toEntity() {
+        Category c = new Category();
+        applyTo(c);
+        return c;
+    }
 }

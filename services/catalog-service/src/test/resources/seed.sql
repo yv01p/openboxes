@@ -13,11 +13,14 @@ UPDATE unit_of_measure_class SET base_uom_id = 'uom-kg' WHERE id = 'uomc-mass';
 UPDATE unit_of_measure_class SET base_uom_id = 'uom-pc' WHERE id = 'uomc-count';
 
 -- Category tree: root + 2 children
-INSERT INTO category (id, name, sort_order, is_root) VALUES
-    ('cat-root', 'Root', 0, 1);
-INSERT INTO category (id, name, parent_category_id, sort_order, is_root) VALUES
-    ('cat-medical', 'Medical', 'cat-root', 1, 0),
-    ('cat-supplies', 'Supplies', 'cat-root', 2, 0);
+-- T12: category gained version (bigint NOT NULL, no DB default) + NOT NULL date_created/last_updated
+-- (timestamp-only audit). ddl-auto=create now generates these NOT NULL, so the seed must supply them
+-- (mirrors the product_supplier seed rows). version=0, NOW() for the audit timestamps.
+INSERT INTO category (id, name, sort_order, is_root, version, date_created, last_updated) VALUES
+    ('cat-root', 'Root', 0, 1, 0, NOW(), NOW());
+INSERT INTO category (id, name, parent_category_id, sort_order, is_root, version, date_created, last_updated) VALUES
+    ('cat-medical', 'Medical', 'cat-root', 1, 0, 0, NOW(), NOW()),
+    ('cat-supplies', 'Supplies', 'cat-root', 2, 0, 0, NOW(), NOW());
 
 -- 2 ProductType
 INSERT INTO product_type (id, name, code, product_type_code) VALUES
