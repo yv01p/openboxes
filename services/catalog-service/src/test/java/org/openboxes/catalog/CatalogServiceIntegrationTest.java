@@ -61,6 +61,9 @@ class CatalogServiceIntegrationTest {
     // T8 ProductAttribute is repo-backed (no cache) — service + EMF injected for the N+1 query-count proof.
     @Autowired org.openboxes.catalog.service.ProductAttributeService productAttributeService;
     @Autowired jakarta.persistence.EntityManagerFactory emf;
+    // T9 ProductAssociation is repo-backed (no cache) — service injected for the N+1 query-count proof
+    // (reuses the EMF field above). generate_statistics is already enabled in @DynamicPropertySource.
+    @Autowired org.openboxes.catalog.service.ProductAssociationService productAssociationService;
 
     private static final String TEST_SECRET = "test-secret-32-chars-minimum-for-hs256-key";
 
@@ -446,6 +449,74 @@ class CatalogServiceIntegrationTest {
             emf.unwrap(org.hibernate.SessionFactory.class).getStatistics();
         stats.clear();
         var result = productAttributeService.list();
+        assertThat(result).hasSizeGreaterThanOrEqualTo(2);   // ≥2 rows so a single query proves no fan-out
+        assertThat(stats.getPrepareStatementCount()).isEqualTo(1L);   // exactly ONE JDBC statement for N rows → no N+1
+    }
+
+    // ---------------------------------------------------------------
+    // ProductAssociation (T9) — GET-only repo-backed read entity (zero React callers; FD#1). NO cache
+    // (Grails domain has no `cache true`). Instant timestamp-only audit (date_created/last_updated NOT
+    // NULL). SELF-FK mutualAssociation read as a proxy id only. Writes (validator + beforeDelete) stay
+    // Grails-side. No sibling writers (GET-only) → count-of-3 assertions are deterministic. Plus N+1 proof.
+    // ---------------------------------------------------------------
+
+    @Test void productAssociationList_returnsSeeded() throws Exception {
+        mvc.perform(get("/api/productAssociations").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.length()").value(3))
+            .andExpect(jsonPath("$.data[?(@.id == 'pa-band-syr')]").exists());
+    }
+
+    @Test void productAssociationGet_flatDto() throws Exception {
+        mvc.perform(get("/api/productAssociations/pa-band-syr").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.id").value("pa-band-syr"))
+            .andExpect(jsonPath("$.data.code").value("SUBSTITUTE"))
+            .andExpect(jsonPath("$.data.productId").value("p-bandage"))
+            .andExpect(jsonPath("$.data.associatedProductId").value("p-syringe"))
+            .andExpect(jsonPath("$.data.quantity").value(1.00))
+            .andExpect(jsonPath("$.data.comments").value("Bandage substitutes Syringe"))
+            // SELF-FK: mutual_association_id was UPDATEd to point at pa-syr-band — proxy id read only.
+            .andExpect(jsonPath("$.data.mutualAssociationId").value("pa-syr-band"));
+    }
+
+    @Test void productAssociationGet_404OnMissing() throws Exception {
+        mvc.perform(get("/api/productAssociations/pa-nonexistent").cookie(authCookie()))
+            .andExpect(status().isNotFound());
+    }
+
+    @Test void productAssociationGet_dtoFlatness_noNestedFKEntities() throws Exception {
+        // FD#2/FD#3: flat FK strings only — no nested {product:{...}} / {associatedProduct:{...}} /
+        // {mutualAssociation:{...}} (the self-FK must also stay flat).
+        mvc.perform(get("/api/productAssociations/pa-band-syr").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.product").doesNotExist())
+            .andExpect(jsonPath("$.data.associatedProduct").doesNotExist())
+            .andExpect(jsonPath("$.data.mutualAssociation").doesNotExist());
+    }
+
+    @Test void productAssociationGet_nullMutualAssociation() throws Exception {
+        // pa-band-iv seeds mutual_association_id NULL + comments NULL: proves the null self-FK proxy maps
+        // to a null id string and a null scalar comments. quantity 2.50 read directly.
+        mvc.perform(get("/api/productAssociations/pa-band-iv").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.mutualAssociationId").value(org.hamcrest.Matchers.nullValue()))
+            .andExpect(jsonPath("$.data.comments").value(org.hamcrest.Matchers.nullValue()))
+            .andExpect(jsonPath("$.data.quantity").value(2.50));
+    }
+
+    @Test void productAssociationList_noN1_boundedQueryCount() {
+        // N+1 proof: LAZY FKs + a DTO that reads only .getId() (the proxy id is populated without
+        // initialization → no DB hit) means findAll() emits a SINGLE SELECT regardless of row count —
+        // and this holds even for the SELF-FK mutualAssociation (its id is read off the proxy, no init).
+        // We deliberately did NOT use @EntityGraph. Hibernate statistics enabled via @DynamicPropertySource.
+        // NOTE: reads the process-global SessionFactory statistics counter, correct ONLY while the suite
+        // runs single-threaded/sequentially (no parallel test execution is configured). If concurrency is
+        // ever enabled, scope the count to one session instead of the global counter, or this goes flaky.
+        org.hibernate.stat.Statistics stats =
+            emf.unwrap(org.hibernate.SessionFactory.class).getStatistics();
+        stats.clear();
+        var result = productAssociationService.list();
         assertThat(result).hasSizeGreaterThanOrEqualTo(2);   // ≥2 rows so a single query proves no fan-out
         assertThat(stats.getPrepareStatementCount()).isEqualTo(1L);   // exactly ONE JDBC statement for N rows → no N+1
     }

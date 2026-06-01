@@ -131,3 +131,14 @@ INSERT INTO product_attribute (id, version, attribute_id, product_id, value, uni
     ('pa-bandage-color', 0, 'attr-color', 'p-bandage', 'Blue', NULL, NULL),
     ('pa-bandage-size', 0, 'attr-size', 'p-bandage', 'Large', 'uom-pc', 'ps-bandage-acme'),
     ('pa-syringe-color', 0, 'attr-color', 'p-syringe', 'Clear', NULL, NULL);
+
+-- product_association (T9). GET-only; timestamp-only Instant audit (date_created/last_updated NOT NULL).
+-- code stored as the ProductAssociationTypeCode enum name (String). quantity NOT NULL (live schema).
+-- Self-FK mutual_association_id: pa-band-syr <-> pa-syr-band are mutual (set via UPDATE to break the
+-- INSERT cycle); pa-band-iv has a NULL mutual to exercise the null self-FK -> null id mapping.
+-- GET-only, no sibling writers -> count assertion of 3 is deterministic.
+INSERT INTO product_association (id, code, product_id, associated_product_id, quantity, comments, version, date_created, last_updated, mutual_association_id) VALUES
+    ('pa-band-syr', 'SUBSTITUTE', 'p-bandage', 'p-syringe', 1.00, 'Bandage substitutes Syringe', 0, NOW(), NOW(), NULL),
+    ('pa-syr-band', 'SUBSTITUTE', 'p-syringe', 'p-bandage', 1.00, 'Syringe substitutes Bandage', 0, NOW(), NOW(), 'pa-band-syr'),
+    ('pa-band-iv', 'ACCESSORY', 'p-bandage', 'p-iv-drip', 2.50, NULL, 0, NOW(), NOW(), NULL);
+UPDATE product_association SET mutual_association_id = 'pa-syr-band' WHERE id = 'pa-band-syr';
