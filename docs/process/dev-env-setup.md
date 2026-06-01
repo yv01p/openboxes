@@ -69,3 +69,51 @@ Prevention: once the dev user is in the docker group (per the section above),
 Gradle no longer needs `sudo` for docker-related tasks, and TestContainers runs
 without `sudo`. The chown above should be a one-time recovery action, not a
 recurring maintenance task.
+
+## JDK toolchain split: Temurin 8 (Grails) + JDK 17 (services) (Phase 5.5 RC-20)
+
+This repo builds with **two JDKs**, by design (decided at migration start):
+
+- **Root Grails monolith** (Grails 3.3.16 / Gradle 4.10.3 / Groovy 2.4.21,
+  `sourceCompatibility = 1.8`) → **Temurin 8**. This is what `docker/Dockerfile`
+  (`FROM eclipse-temurin:8-jre-jammy`) and every `.github/workflows/*` backend job
+  (`setup-java` with `java-version: 8, distribution: temurin`) use.
+- **`services/` Spring Boot modules** (Gradle 8.5) → **JDK 17** (JDK 21 also works,
+  being a 17 superset; the e2e workflow provisions JDK 21 "for services").
+
+**Symptom when the Grails build is run under a modern JDK (e.g. 21):** Gradle 4.10.3
+only supports up to Java 11, so under JDK 17/21 the root build breaks in two ways that
+look unrelated but share this one root cause:
+
+1. `:generateGitProperties` fails with
+   `No such property: out for class: com.gorylenko.writer.NormalizeEOLOutputStream`
+   (the `gradle-git-properties` 2.2.4 plugin's `FilterOutputStream.out` field is not
+   reachable via Groovy property access under JDK 17+ module encapsulation).
+2. The Spock **test worker hangs indefinitely** — it compiles, then sits at ~0% CPU
+   producing no results (illegal reflective access in the Grails 3.3 test runtime).
+
+Both vanish under Temurin 8. (Surfaced in Phase 5.5 T13, the first task to touch the
+root build; T6–T12 only used the `services/` Gradle 8.5 build, so they never hit it.)
+
+Install Temurin 8 (Adoptium repo, matching CI/Docker):
+
+```bash
+sudo mkdir -p /etc/apt/keyrings
+wget -qO - https://packages.adoptium.net/artifactory/api/gpg/key/public \
+  | sudo tee /etc/apt/keyrings/adoptium.asc > /dev/null
+echo "deb [signed-by=/etc/apt/keyrings/adoptium.asc] https://packages.adoptium.net/artifactory/deb $(. /etc/os-release && echo $VERSION_CODENAME) main" \
+  | sudo tee /etc/apt/sources.list.d/adoptium.list
+sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y temurin-8-jdk
+```
+
+Run root Grails Gradle tasks with `JAVA_HOME` pointed at Temurin 8 (leave the default
+`java` as the services JDK):
+
+```bash
+JAVA_HOME=/usr/lib/jvm/temurin-8-jdk-amd64 ./gradlew test integrationTest
+```
+
+**Do NOT** set `org.gradle.java.home` in `~/.gradle/gradle.properties` to fix this —
+that variable is global to the user and would force the `services/` Spring Boot build
+onto JDK 8 too (which it cannot use). Scope JDK 8 to the root build via `JAVA_HOME`
+per-invocation, exactly as CI does (separate `setup-java` steps per module).
