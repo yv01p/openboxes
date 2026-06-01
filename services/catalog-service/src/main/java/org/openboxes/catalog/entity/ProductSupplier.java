@@ -20,9 +20,9 @@ import java.time.Instant;
 // exist in the table but are NOT in the Grails domain — left intentionally unmapped (all nullable, so
 // validate ignores them and inserts that omit them succeed).
 //
-// OMITTED in T2 (Java has no forward references; the entities don't exist yet):
+// STILL OMITTED (Java has no forward references; the entity doesn't exist yet):
 //   - contractPrice @ManyToOne ProductPrice (T5 appends; column contract_price_id)
-//   - defaultProductPackage @ManyToOne ProductPackage (T4 appends; column default_product_package_id)
+// T4 appended: defaultProductPackage @ManyToOne ProductPackage (column default_product_package_id).
 @Entity
 @Table(name = "product_supplier")
 @EntityListeners(AuditingEntityListener.class)
@@ -108,6 +108,13 @@ public class ProductSupplier {
     @Column(name = "updated_by_id", columnDefinition = "CHAR(38)")
     private String updatedById;
 
+    // T4 forward-decl split: catalog-internal FK → ProductPackage. Nullable @ManyToOne (live column
+    // default_product_package_id char(38) DEFAULT NULL). Resolved by ProductSupplierService from the
+    // DTO's defaultProductPackageId on every save/update.
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "default_product_package_id", columnDefinition = "CHAR(38)")
+    private ProductPackage defaultProductPackage;
+
     // public (not protected like the R/O entities): write-path mappers in the dto package
     // (ProductSupplierDto.toEntity) construct instances directly.
     public ProductSupplier() {}
@@ -179,6 +186,9 @@ public class ProductSupplier {
     public void setActive(Boolean active) { this.active = active; }
 
     public Long getVersion() { return version; }
+
+    public ProductPackage getDefaultProductPackage() { return defaultProductPackage; }
+    public void setDefaultProductPackage(ProductPackage defaultProductPackage) { this.defaultProductPackage = defaultProductPackage; }
 
     public Instant getDateCreated() { return dateCreated; }
     public Instant getLastUpdated() { return lastUpdated; }

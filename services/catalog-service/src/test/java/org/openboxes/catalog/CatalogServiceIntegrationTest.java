@@ -607,14 +607,121 @@ class CatalogServiceIntegrationTest {
 
     @Test void productSupplierPreferenceDto_isFlat_noNestedEntities() throws Exception {
         // FD#2: DTO is flat (productSupplierId, destinationPartyId, preferenceTypeId as raw String ids, no nested entities).
-        mvc.perform(get("/api/productSupplierPreferences?productSupplier=ps-bandage-acme").cookie(authCookie()))
+        // Pin assertions to the seeded row (psp-bandage-acme-boston, which has a non-null
+        // destinationPartyId) rather than the positional [0]: findAll() ordering is non-deterministic
+        // and other tests in the suite insert null-destinationParty rows, so [0] can be a
+        // null-destination row (which fails the destinationPartyId isString check). Extracting the
+        // known seeded row by id makes the test order-independent.
+        var result = mvc.perform(get("/api/productSupplierPreferences?productSupplier=ps-bandage-acme").cookie(authCookie()))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.data[0].id").isString())
+            // No nested entity inflation: flat FK strings only, asserted positionally (true for every row).
             .andExpect(jsonPath("$.data[0].productSupplier").doesNotExist())
             .andExpect(jsonPath("$.data[0].destinationParty").doesNotExist())
             .andExpect(jsonPath("$.data[0].preferenceType").doesNotExist())
-            .andExpect(jsonPath("$.data[0].productSupplierId").isString())
-            .andExpect(jsonPath("$.data[0].destinationPartyId").isString())
-            .andExpect(jsonPath("$.data[0].preferenceTypeId").isString());
+            .andReturn();
+        String body = result.getResponse().getContentAsString();
+        java.util.List<Object> boston = com.jayway.jsonpath.JsonPath.read(
+            body, "$.data[?(@.id == 'psp-bandage-acme-boston')]");
+        assertThat(boston).hasSize(1);
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> row = (java.util.Map<String, Object>) boston.get(0);
+        assertThat(row.get("productSupplierId")).isEqualTo("ps-bandage-acme");
+        assertThat(row.get("destinationPartyId")).isEqualTo("org-boston-placeholder");
+        assertThat(row.get("preferenceTypeId")).isEqualTo("pref-type-default");
+    }
+
+    // ---------------------------------------------------------------
+    // ProductPackage POST/GET (T4) — backend + integration tests only.
+    // Verb scope: POST (create — React ProductPackageApi.js save) + GET (cutover load read). No PUT/DELETE.
+    // ---------------------------------------------------------------
+
+    @Test void productPackagePost_createsRow_withGeneratedId_andFlatIds() throws Exception {
+        // Real flat payload (per C3 lesson): product + productSupplier + uom + quantity.
+        // JWT subject ("test-user") populates createdById via JwtAuditorAware (FD#8 Option-A audit proof).
+        String json = "{\"productId\":\"p-bandage\",\"productSupplierId\":\"ps-bandage-acme\"," +
+            "\"uomId\":\"uom-pc\",\"quantity\":24,\"name\":\"Bandage Case\",\"gtin\":\"GTIN-BND-CASE\"}";
+        mvc.perform(post("/api/productPackages")
+                .content(json).contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.id").isString())
+            .andExpect(jsonPath("$.data.name").value("Bandage Case"))
+            .andExpect(jsonPath("$.data.quantity").value(24))
+            .andExpect(jsonPath("$.data.productId").value("p-bandage"))
+            .andExpect(jsonPath("$.data.productSupplierId").value("ps-bandage-acme"))
+            .andExpect(jsonPath("$.data.uomId").value("uom-pc"))
+            .andExpect(jsonPath("$.data.createdById").value("test-user"));
+    }
+
+    @Test void productPackageGet_returnsSeededRow() throws Exception {
+        mvc.perform(get("/api/productPackages/pp-bandage-box").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.id").value("pp-bandage-box"))
+            .andExpect(jsonPath("$.data.name").value("Bandage Box"))
+            .andExpect(jsonPath("$.data.quantity").value(12))
+            .andExpect(jsonPath("$.data.productId").value("p-bandage"))
+            .andExpect(jsonPath("$.data.uomId").value("uom-pc"))
+            .andExpect(jsonPath("$.data.productSupplierId").value("ps-bandage-acme"));
+    }
+
+    @Test void productPackageGet_404OnMissing() throws Exception {
+        mvc.perform(get("/api/productPackages/nonexistent").cookie(authCookie()))
+            .andExpect(status().isNotFound());
+    }
+
+    @Test void productPackageGet_filterByProductSupplier_returnsSupplierPackages() throws Exception {
+        // GET ?productSupplier=<id> returns only that supplier's packages (cutover read-GET).
+        mvc.perform(get("/api/productPackages?productSupplier=ps-bandage-acme").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data[?(@.id == 'pp-bandage-box')]").exists())
+            .andExpect(jsonPath("$.data[?(@.productSupplierId == 'ps-bandage-acme')]").exists());
+    }
+
+    @Test void productPackagePost_duplicateTupleReturns409() throws Exception {
+        // Friendly pre-check (ports the Grails findWhere validator): same
+        // (product, productSupplier, uom, quantity) tuple twice → second is 409 via DuplicatePackageException.
+        String json = "{\"productId\":\"p-bandage\",\"productSupplierId\":\"ps-bandage-acme\"," +
+            "\"uomId\":\"uom-pc\",\"quantity\":48,\"name\":\"Dup Pack\"}";
+        mvc.perform(post("/api/productPackages")
+                .content(json).contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
+            .andExpect(status().isOk());
+        mvc.perform(post("/api/productPackages")
+                .content(json).contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
+            .andExpect(status().isConflict());  // 409 via DuplicatePackageException → GlobalExceptionHandler
+    }
+
+    @Test void productPackagePost_missingNotNullQuantity_returns409() throws Exception {
+        // DB backstop via C2: quantity is the genuinely NOT-NULL column (product is NULLABLE — see
+        // ProductPackage header deviation note). Omitting quantity → DataIntegrityViolationException → 409.
+        String json = "{\"productId\":\"p-bandage\",\"productSupplierId\":\"ps-bandage-acme\"," +
+            "\"uomId\":\"uom-pc\",\"name\":\"No Quantity\"}";
+        mvc.perform(post("/api/productPackages")
+                .content(json).contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
+            .andExpect(status().isConflict());  // 409, not 401/500
+    }
+
+    @Test void productPackageDto_isFlat_noNestedEntities() throws Exception {
+        // FD#2: DTO is flat (productId, uomId, productSupplierId as raw String ids, no nested entities).
+        mvc.perform(get("/api/productPackages/pp-bandage-box").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.product").doesNotExist())
+            .andExpect(jsonPath("$.data.uom").doesNotExist())
+            .andExpect(jsonPath("$.data.productSupplier").doesNotExist())
+            .andExpect(jsonPath("$.data.productId").isString())
+            .andExpect(jsonPath("$.data.uomId").isString())
+            .andExpect(jsonPath("$.data.productSupplierId").isString());
+    }
+
+    @Test void productSupplierPut_setsDefaultProductPackageId_exposedOnGet() throws Exception {
+        // T4 forward-decl split: ProductSupplier.defaultProductPackage is now mapped. PUT the supplier
+        // with defaultProductPackageId set to the seeded package, then GET → the flat id is present.
+        String json = "{\"name\":\"Bandage from Acme\",\"productId\":\"p-bandage\"," +
+            "\"defaultProductPackageId\":\"pp-bandage-box\"}";
+        mvc.perform(put("/api/productSuppliers/ps-bandage-acme")
+                .content(json).contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.defaultProductPackageId").value("pp-bandage-box"));
+        mvc.perform(get("/api/productSuppliers/ps-bandage-acme").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.defaultProductPackageId").value("pp-bandage-box"));
     }
 }

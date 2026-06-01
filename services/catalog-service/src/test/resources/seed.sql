@@ -71,3 +71,10 @@ INSERT INTO product_supplier (id, code, name, product_id, supplier_id, active, t
 -- All NOT NULL columns the entity maps are populated: product_supplier_id, version, date_created, last_updated.
 INSERT INTO product_supplier_preference (id, product_supplier_id, destination_party_id, preference_type_id, comments, version, date_created, last_updated) VALUES
     ('psp-bandage-acme-boston', 'ps-bandage-acme', 'org-boston-placeholder', 'pref-type-default', 'Preferred for Boston', 0, NOW(), NOW());
+
+-- 1 ProductPackage (T4). Fixture references p-bandage, ps-bandage-acme, uom-pc.
+-- All NOT NULL columns the entity maps are populated: quantity, version, date_created, last_updated.
+-- product_price_id is NOT referenced here (the productPrice association is unmapped at T4, so the
+-- create-mode schema won't have that column).
+INSERT INTO product_package (id, name, description, gtin, quantity, product_id, uom_id, product_supplier_id, version, date_created, last_updated) VALUES
+    ('pp-bandage-box', 'Bandage Box', 'Box of 12 bandages', 'GTIN-BND-BOX', 12, 'p-bandage', 'uom-pc', 'ps-bandage-acme', 0, NOW(), NOW());

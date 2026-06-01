@@ -6,8 +6,8 @@ import java.math.BigDecimal;
 import java.time.Instant;
 
 // Flat FK-only DTO per FD#2: ALL FKs exposed as raw String ids (no nested entities).
-// contractPriceId + defaultProductPackageId are included for DTO stability across T4/T5 but always
-// map to null in T2 (the entity doesn't hold those associations yet — T4/T5 wire them and populate here).
+// defaultProductPackageId is wired to the T4 @ManyToOne (read in from(), resolved by the service).
+// contractPriceId is still always null (T5 wires the contractPrice association + populates here).
 public record ProductSupplierDto(
     String id,
     String code,
@@ -62,9 +62,10 @@ public record ProductSupplierDto(
             ps.getComments(),
             ps.getTieredPricing(),
             ps.getActive(),
-            // contractPriceId / defaultProductPackageId: always null in T2 (associations added by T5/T4).
+            // contractPriceId: still null until T5 wires the contractPrice association.
             null,
-            null,
+            // defaultProductPackageId: wired to the T4 @ManyToOne.
+            ps.getDefaultProductPackage() == null ? null : ps.getDefaultProductPackage().getId(),
             ps.getDateCreated(),
             ps.getLastUpdated(),
             ps.getCreatedById(),
@@ -72,10 +73,10 @@ public record ProductSupplierDto(
         );
     }
 
-    // Maps flat scalar/FK-string fields onto an entity. The `product` association is resolved and set
-    // by the service (from ProductRepository); audit fields (date/by) are populated by the auditing
-    // listener; id and version are managed by the service/Hibernate. contractPriceId /
-    // defaultProductPackageId are ignored in T2 (associations don't exist on the entity yet).
+    // Maps flat scalar/FK-string fields onto an entity. The `product` and `defaultProductPackage`
+    // associations are resolved and set by the service; audit fields (date/by) are populated by the
+    // auditing listener; id and version are managed by the service/Hibernate. contractPriceId is
+    // still ignored here (the contractPrice association doesn't exist on the entity yet — T5).
     public void applyTo(ProductSupplier ps) {
         ps.setCode(code);
         ps.setName(name);
