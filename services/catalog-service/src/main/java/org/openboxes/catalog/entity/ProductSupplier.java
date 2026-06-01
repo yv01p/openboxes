@@ -20,9 +20,9 @@ import java.time.Instant;
 // exist in the table but are NOT in the Grails domain — left intentionally unmapped (all nullable, so
 // validate ignores them and inserts that omit them succeed).
 //
-// STILL OMITTED (Java has no forward references; the entity doesn't exist yet):
-//   - contractPrice @ManyToOne ProductPrice (T5 appends; column contract_price_id)
 // T4 appended: defaultProductPackage @ManyToOne ProductPackage (column default_product_package_id).
+// T5 appended: contractPrice @ManyToOne ProductPrice (column contract_price_id, nullable). Nothing
+// remains omitted — all catalog-internal FK associations on product_supplier are now mapped.
 @Entity
 @Table(name = "product_supplier")
 @EntityListeners(AuditingEntityListener.class)
@@ -115,6 +115,14 @@ public class ProductSupplier {
     @JoinColumn(name = "default_product_package_id", columnDefinition = "CHAR(38)")
     private ProductPackage defaultProductPackage;
 
+    // T5 forward-decl split: catalog-internal FK → ProductPrice. Nullable @ManyToOne (live column
+    // contract_price_id char(38) DEFAULT NULL). Resolved by ProductSupplierService from the DTO's
+    // contractPriceId on every save/update, and set by ProductPackageService when the package POST
+    // carries an embedded contract price (contractPricePrice).
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "contract_price_id", columnDefinition = "CHAR(38)")
+    private ProductPrice contractPrice;
+
     // public (not protected like the R/O entities): write-path mappers in the dto package
     // (ProductSupplierDto.toEntity) construct instances directly.
     public ProductSupplier() {}
@@ -189,6 +197,9 @@ public class ProductSupplier {
 
     public ProductPackage getDefaultProductPackage() { return defaultProductPackage; }
     public void setDefaultProductPackage(ProductPackage defaultProductPackage) { this.defaultProductPackage = defaultProductPackage; }
+
+    public ProductPrice getContractPrice() { return contractPrice; }
+    public void setContractPrice(ProductPrice contractPrice) { this.contractPrice = contractPrice; }
 
     public Instant getDateCreated() { return dateCreated; }
     public Instant getLastUpdated() { return lastUpdated; }

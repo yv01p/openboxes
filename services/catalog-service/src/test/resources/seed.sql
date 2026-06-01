@@ -78,3 +78,8 @@ INSERT INTO product_supplier_preference (id, product_supplier_id, destination_pa
 -- create-mode schema won't have that column).
 INSERT INTO product_package (id, name, description, gtin, quantity, product_id, uom_id, product_supplier_id, version, date_created, last_updated) VALUES
     ('pp-bandage-box', 'Bandage Box', 'Box of 12 bandages', 'GTIN-BND-BOX', 12, 'p-bandage', 'uom-pc', 'ps-bandage-acme', 0, NOW(), NOW());
+
+-- 1 ProductPrice (T5). type and price are NOT NULL (price decimal(19,4), type stored as enum-name String).
+-- currency_id references seeded uom-pc; from_date/to_date and audit columns are nullable.
+INSERT INTO product_price (id, version, type, price, currency_id, from_date, to_date, date_created, last_updated) VALUES
+    ('pp-price-acme', 0, 'DEFAULT_PRICE', 9.9900, 'uom-pc', NULL, NULL, NOW(), NOW());

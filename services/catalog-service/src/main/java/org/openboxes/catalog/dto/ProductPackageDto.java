@@ -2,12 +2,20 @@ package org.openboxes.catalog.dto;
 
 import org.openboxes.catalog.entity.ProductPackage;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 
 // Flat FK-only DTO per FD#2: ALL FKs exposed as raw String ids (no nested entities).
 // productId, uomId, productSupplierId are all String ids matching the entity's flat-FK convention.
-// productPriceId is OMITTED at T4 (the productPrice association doesn't exist on the entity yet —
-// T5 wires it and adds the field here).
+// productPriceId (T5) is the READ-side id of the package's own ProductPrice (the productPrice @ManyToOne).
+//
+// WRITE-ONLY price-VALUE fields (T5): productPackagePrice, contractPricePrice, contractPriceValidUntil.
+// At cutover the React form posts price VALUES (not ids) via buildPackagePayload
+// (useProductSupplierForm.js:265-277): productPackagePrice, contractPricePrice, contractPriceValidUntil.
+// These are NOT entity columns — the service (ProductPackageService.save) materializes ProductPrice rows
+// from them. They are write-only: from() always emits null for them (there is nothing to read back from
+// the package entity), so a round-tripped DTO never re-exposes the raw input values.
+// contractPriceValidUntil maps to ProductPrice.toDate (Deviation #2 — there is no valid_until column).
 public record ProductPackageDto(
     String id,
     String productId,
@@ -17,6 +25,11 @@ public record ProductPackageDto(
     String description,
     String gtin,
     Integer quantity,
+    String productPriceId,
+    // Write-only embedded-price inputs (see header). Always null in from().
+    BigDecimal productPackagePrice,
+    BigDecimal contractPricePrice,
+    Instant contractPriceValidUntil,
     Instant dateCreated,
     Instant lastUpdated,
     String createdById,
@@ -32,6 +45,12 @@ public record ProductPackageDto(
             pp.getDescription(),
             pp.getGtin(),
             pp.getQuantity(),
+            // productPriceId: read the package's own price id (T5 association).
+            pp.getProductPrice() == null ? null : pp.getProductPrice().getId(),
+            // The three price-VALUE fields are write-only inputs, not entity columns — always null here.
+            null,
+            null,
+            null,
             pp.getDateCreated(),
             pp.getLastUpdated(),
             pp.getCreatedById(),
@@ -41,7 +60,9 @@ public record ProductPackageDto(
 
     // Maps flat scalar fields onto an entity. The product/uom/productSupplier @ManyToOne associations
     // are resolved and set by the service (via getReferenceById); audit fields are populated by the
-    // listener; id/version are managed by the service/Hibernate.
+    // listener; id/version are managed by the service/Hibernate. The embedded-price fields
+    // (productPackagePrice/contractPricePrice/contractPriceValidUntil) are NOT applied here — the
+    // service materializes ProductPrice rows from them (price persistence is a service concern).
     public void applyTo(ProductPackage pp) {
         pp.setName(name);
         pp.setDescription(description);

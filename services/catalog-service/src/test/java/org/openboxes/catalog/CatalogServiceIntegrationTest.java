@@ -724,4 +724,147 @@ class CatalogServiceIntegrationTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.defaultProductPackageId").value("pp-bandage-box"));
     }
+
+    // ---------------------------------------------------------------
+    // ProductPrice (T5) — backend + integration tests only.
+    // Verb scope: GET /api/productPrices/{id} (cutover load read). Prices are WRITTEN through the
+    // package POST (embedded productPackagePrice / contractPricePrice), not directly.
+    // Deviation #1: ProductPrice has NO productPackage/productSupplier columns (currency is its only FK).
+    // Deviation #2: no valid_until column — contractPriceValidUntil maps to to_date.
+    // ---------------------------------------------------------------
+
+    @Autowired org.openboxes.catalog.repository.ProductPriceRepository productPriceRepo;
+
+    @Test void productPriceGet_returnsSeededRow_flat() throws Exception {
+        // Flat DTO: price/currencyId/type/fromDate/toDate as scalars (currencyId raw id, no nested currency).
+        mvc.perform(get("/api/productPrices/pp-price-acme").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.id").value("pp-price-acme"))
+            .andExpect(jsonPath("$.data.price").value(9.99))
+            .andExpect(jsonPath("$.data.type").value("DEFAULT_PRICE"))
+            .andExpect(jsonPath("$.data.currencyId").value("uom-pc"));
+    }
+
+    @Test void productPriceGet_404OnMissing() throws Exception {
+        mvc.perform(get("/api/productPrices/nonexistent").cookie(authCookie()))
+            .andExpect(status().isNotFound());
+    }
+
+    @Test void productPriceDto_isFlat_noNestedCurrency() throws Exception {
+        // FD#2: DTO is flat — currencyId is a raw String id, there is NO nested `currency` entity.
+        mvc.perform(get("/api/productPrices/pp-price-acme").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.currency").doesNotExist())
+            .andExpect(jsonPath("$.data.currencyId").isString());
+    }
+
+    @Test void productPackagePost_withEmbeddedPrices_persistsPackageAndContractPrice() throws Exception {
+        // Real flat payload (per C3 lesson) — the cutover form's buildPackagePayload shape: the package
+        // scalars PLUS the embedded price VALUES (productPackagePrice, contractPricePrice,
+        // contractPriceValidUntil). The service materializes both ProductPrice rows.
+        //
+        // Test isolation: this test creates its OWN throwaway supplier (NOT the shared seeded
+        // ps-bandage-acme). The contract-price branch reuses-or-creates the supplier's contractPrice,
+        // so running it against ps-bandage-acme could update whatever price that supplier currently
+        // points at (e.g. the seeded pp-price-acme, if productSupplierPut_setsContractPriceId ran
+        // first), mutating its price out from under productPriceGet_returnsSeededRow_flat. A dedicated
+        // supplier keeps this test order-independent against the shared committed test DB.
+        String supplierJson = "{\"name\":\"Embedded Price Supplier\",\"productId\":\"p-bandage\"}";
+        String supplierCreated = mvc.perform(post("/api/productSuppliers")
+                .content(supplierJson).contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andReturn().getResponse().getContentAsString();
+        String supplierId = com.jayway.jsonpath.JsonPath.read(supplierCreated, "$.data.id");
+
+        String json = "{\"productId\":\"p-bandage\",\"productSupplierId\":\"" + supplierId + "\"," +
+            "\"uomId\":\"uom-pc\",\"quantity\":36,\"name\":\"Priced Pack\"," +
+            "\"productPackagePrice\":5.50,\"contractPricePrice\":4.25," +
+            "\"contractPriceValidUntil\":\"2027-01-01T00:00:00Z\"}";
+        String body = mvc.perform(post("/api/productPackages")
+                .content(json).contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
+            .andExpect(status().isOk())
+            // (a) the returned package has a non-null productPriceId (its own price was created).
+            .andExpect(jsonPath("$.data.productPriceId").isString())
+            .andReturn().getResponse().getContentAsString();
+
+        String productPriceId = com.jayway.jsonpath.JsonPath.read(body, "$.data.productPriceId");
+
+        // (b) GET that price → price == productPackagePrice.
+        mvc.perform(get("/api/productPrices/" + productPriceId).cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.price").value(5.50));
+
+        // (c) the supplier now exposes a non-null contractPriceId (its contract price was created).
+        String supplierBody = mvc.perform(get("/api/productSuppliers/" + supplierId).cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.contractPriceId").isString())
+            .andReturn().getResponse().getContentAsString();
+        String contractPriceId = com.jayway.jsonpath.JsonPath.read(supplierBody, "$.data.contractPriceId");
+
+        // (d) GET the contract price → price == contractPricePrice AND toDate is set.
+        mvc.perform(get("/api/productPrices/" + contractPriceId).cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.price").value(4.25))
+            .andExpect(jsonPath("$.data.toDate").exists());
+    }
+
+    @Test void productPackagePost_withoutPriceFields_stillSucceeds_noPrice() throws Exception {
+        // T4 regression guard: a package POST WITHOUT any price fields must still 200 with a null
+        // productPriceId (the price branches are conditional on non-null inputs).
+        String json = "{\"productId\":\"p-bandage\",\"productSupplierId\":\"ps-bandage-acme\"," +
+            "\"uomId\":\"uom-pc\",\"quantity\":99,\"name\":\"Unpriced Pack\"}";
+        mvc.perform(post("/api/productPackages")
+                .content(json).contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.productPriceId").doesNotExist());
+    }
+
+    @Test void productSupplierPut_setsContractPriceId_exposedOnGet() throws Exception {
+        // T5 forward-decl split (symmetric to the T4 defaultProductPackageId test): ProductSupplier.
+        // contractPrice is now mapped. PUT the supplier with contractPriceId set to the seeded price,
+        // then GET → the flat id is present.
+        String json = "{\"name\":\"Bandage from Acme\",\"productId\":\"p-bandage\"," +
+            "\"contractPriceId\":\"pp-price-acme\"}";
+        mvc.perform(put("/api/productSuppliers/ps-bandage-acme")
+                .content(json).contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.contractPriceId").value("pp-price-acme"));
+        mvc.perform(get("/api/productSuppliers/ps-bandage-acme").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.contractPriceId").value("pp-price-acme"));
+    }
+
+    @Test void productPackageDto_exposesProductPriceId_fromSeededLink() throws Exception {
+        // Focused read assertion: link the seeded package to the seeded price via the repository, then
+        // GET the package → productPriceId is exposed (the T5 read-side field on ProductPackageDto).
+        var pkg = productPackageRepo.findById("pp-bandage-box").orElseThrow();
+        pkg.setProductPrice(productPriceRepo.findById("pp-price-acme").orElseThrow());
+        productPackageRepo.save(pkg);
+        mvc.perform(get("/api/productPackages/pp-bandage-box").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.productPriceId").value("pp-price-acme"));
+    }
+
+    @Test void productPrice_orphanDeletes_withoutCascadeInterference() throws Exception {
+        // Deviation #1 / no-cascade: a standalone ProductPrice (linked to no package/supplier) can be
+        // created and deleted via the repository with no effect on seeded packages/suppliers.
+        var orphan = new org.openboxes.catalog.entity.ProductPrice();
+        orphan.setId("pp-price-orphan");
+        orphan.setPrice(new java.math.BigDecimal("1.0000"));
+        productPriceRepo.save(orphan);
+        assertThat(productPriceRepo.findById("pp-price-orphan")).isPresent();
+
+        productPriceRepo.deleteById("pp-price-orphan");
+        assertThat(productPriceRepo.findById("pp-price-orphan")).isEmpty();
+
+        // No cascade interference: the seeded package + supplier are untouched.
+        mvc.perform(get("/api/productPackages/pp-bandage-box").cookie(authCookie()))
+            .andExpect(status().isOk());
+        mvc.perform(get("/api/productSuppliers/ps-bandage-acme").cookie(authCookie()))
+            .andExpect(status().isOk());
+    }
+
+    // Test-only repository wiring for the seeded-link / orphan-delete repo-level assertions (mirrors the
+    // cache-inject convention). Kept in the test to avoid widening the production API for a test.
+    @Autowired org.openboxes.catalog.repository.ProductPackageRepository productPackageRepo;
 }

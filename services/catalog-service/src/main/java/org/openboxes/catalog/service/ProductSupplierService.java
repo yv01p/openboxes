@@ -3,8 +3,10 @@ package org.openboxes.catalog.service;
 import org.openboxes.catalog.dto.ProductSupplierDto;
 import org.openboxes.catalog.entity.Product;
 import org.openboxes.catalog.entity.ProductPackage;
+import org.openboxes.catalog.entity.ProductPrice;
 import org.openboxes.catalog.entity.ProductSupplier;
 import org.openboxes.catalog.repository.ProductPackageRepository;
+import org.openboxes.catalog.repository.ProductPriceRepository;
 import org.openboxes.catalog.repository.ProductRepository;
 import org.openboxes.catalog.repository.ProductSupplierRepository;
 import org.springframework.stereotype.Service;
@@ -24,15 +26,18 @@ public class ProductSupplierService {
     private final ProductSupplierRepository repo;
     private final ProductRepository productRepo;
     private final ProductPackageRepository productPackageRepo;
+    private final ProductPriceRepository productPriceRepo;
 
     public ProductSupplierService(
         ProductSupplierRepository repo,
         ProductRepository productRepo,
-        ProductPackageRepository productPackageRepo
+        ProductPackageRepository productPackageRepo,
+        ProductPriceRepository productPriceRepo
     ) {
         this.repo = repo;
         this.productRepo = productRepo;
         this.productPackageRepo = productPackageRepo;
+        this.productPriceRepo = productPriceRepo;
     }
 
     public List<ProductSupplierDto> list() {
@@ -50,6 +55,7 @@ public class ProductSupplierService {
         ps.setId(UUID.randomUUID().toString());
         ps.setProduct(resolveProduct(dto.productId()));
         ps.setDefaultProductPackage(resolveProductPackage(dto.defaultProductPackageId()));
+        ps.setContractPrice(resolveProductPrice(dto.contractPriceId()));
         return ProductSupplierDto.from(repo.save(ps));
     }
 
@@ -59,6 +65,7 @@ public class ProductSupplierService {
             dto.applyTo(ps);
             ps.setProduct(resolveProduct(dto.productId()));
             ps.setDefaultProductPackage(resolveProductPackage(dto.defaultProductPackageId()));
+            ps.setContractPrice(resolveProductPrice(dto.contractPriceId()));
             return ProductSupplierDto.from(repo.save(ps));
         });
     }
@@ -89,5 +96,15 @@ public class ProductSupplierService {
             return null;
         }
         return productPackageRepo.getReferenceById(defaultProductPackageId);
+    }
+
+    // T5 forward-decl split: contractPrice is a nullable @ManyToOne. Resolved on every save/update
+    // (a PUT omitting it clears it, consistent with resolveProductPackage's behavior).
+    // getReferenceById(null) throws, so null-guard and return null.
+    private ProductPrice resolveProductPrice(String contractPriceId) {
+        if (contractPriceId == null) {
+            return null;
+        }
+        return productPriceRepo.getReferenceById(contractPriceId);
     }
 }

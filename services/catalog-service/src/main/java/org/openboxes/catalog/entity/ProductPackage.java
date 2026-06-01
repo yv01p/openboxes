@@ -25,9 +25,9 @@ import java.time.Instant;
 //   principle, `product` is mapped as a NULLABLE @ManyToOne (no optional=false). The genuinely
 //   NOT-NULL column is `quantity`.
 //
-// OMITTED at T4 (Java has no forward references; the entity doesn't exist yet):
-//   - productPrice @ManyToOne ProductPrice (T5 appends; column product_price_id is nullable, so
-//     ddl-auto=validate tolerates it being unmapped — same convention as T2's unmapped nullable columns).
+// T5 appended: productPrice @ManyToOne ProductPrice (column product_price_id, nullable). The package's
+//   own price (distinct from the supplier's contract price). Set by ProductPackageService when the
+//   package POST carries an embedded productPackagePrice. Nothing remains omitted.
 @Entity
 @Table(name = "product_package")
 @EntityListeners(AuditingEntityListener.class)
@@ -65,6 +65,13 @@ public class ProductPackage {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "product_supplier_id", columnDefinition = "CHAR(38)")
     private ProductSupplier productSupplier;
+
+    // T5 forward-decl split: catalog-internal FK → ProductPrice (the package's own price). Nullable
+    // @ManyToOne (live column product_price_id char(38) DEFAULT NULL). Set by ProductPackageService
+    // when the package POST carries an embedded productPackagePrice.
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "product_price_id", columnDefinition = "CHAR(38)")
+    private ProductPrice productPrice;
 
     // @Version maps version bigint(20) NOT NULL (GORM optimistic-lock column, NO DB default).
     @Version
@@ -110,6 +117,9 @@ public class ProductPackage {
 
     public ProductSupplier getProductSupplier() { return productSupplier; }
     public void setProductSupplier(ProductSupplier productSupplier) { this.productSupplier = productSupplier; }
+
+    public ProductPrice getProductPrice() { return productPrice; }
+    public void setProductPrice(ProductPrice productPrice) { this.productPrice = productPrice; }
 
     public Long getVersion() { return version; }
 
