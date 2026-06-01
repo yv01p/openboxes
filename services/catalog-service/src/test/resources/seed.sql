@@ -65,3 +65,9 @@ INSERT INTO synonym (id, name, locale, synonym_type_code, product_id) VALUES
 -- name, product_id, tiered_pricing, version, date_created, last_updated.
 INSERT INTO product_supplier (id, code, name, product_id, supplier_id, active, tiered_pricing, version, date_created, last_updated) VALUES
     ('ps-bandage-acme', 'PS-BND-ACME', 'Bandage from Acme', 'p-bandage', 'org-acme-placeholder', 1, 0, 0, NOW(), NOW());
+
+-- 1 ProductSupplierPreference (T3). Fixture row references ps-bandage-acme.
+-- destination_party_id and preference_type_id are free Strings in create-mode (no FK to org-service/core entities).
+-- All NOT NULL columns the entity maps are populated: product_supplier_id, version, date_created, last_updated.
+INSERT INTO product_supplier_preference (id, product_supplier_id, destination_party_id, preference_type_id, comments, version, date_created, last_updated) VALUES
+    ('psp-bandage-acme-boston', 'ps-bandage-acme', 'org-boston-placeholder', 'pref-type-default', 'Preferred for Boston', 0, NOW(), NOW());

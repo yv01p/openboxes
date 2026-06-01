@@ -1,5 +1,6 @@
 package org.openboxes.catalog.web;
 
+import org.openboxes.catalog.service.DuplicatePreferenceException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -20,6 +21,12 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<Map<String, String>> conflict(DataIntegrityViolationException e) {
         return ResponseEntity.status(409).body(Map.of("error", "constraint violation"));
+    }
+
+    // T3: app-layer pair-uniqueness violation for ProductSupplierPreference.
+    @ExceptionHandler(DuplicatePreferenceException.class)
+    public ResponseEntity<Map<String, String>> duplicatePreference(DuplicatePreferenceException e) {
+        return ResponseEntity.status(409).body(Map.of("error", e.getMessage()));
     }
 
     // Bad or unreadable request body.

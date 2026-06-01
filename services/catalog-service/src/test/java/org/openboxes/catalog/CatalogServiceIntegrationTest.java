@@ -472,4 +472,149 @@ class CatalogServiceIntegrationTest {
                 .content("{not valid json").contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
             .andExpect(status().isBadRequest());  // 400
     }
+
+    // ---------------------------------------------------------------
+    // ProductSupplierPreference batch/CRUD (T3) — backend + integration tests only, reshaped per write-contract design §4
+    // ---------------------------------------------------------------
+
+    @Test void productSupplierPreferenceBatchPost_createsRows_populatesCreatedByIdFromJwt() throws Exception {
+        // Batch POST creates new rows; JWT subject ("test-user") populates createdById via JwtAuditorAware.
+        String json = "[" +
+            "{\"productSupplierId\":\"ps-bandage-acme\",\"destinationPartyId\":\"org-nyc-placeholder\"," +
+            "\"preferenceTypeId\":\"pref-type-preferred\",\"comments\":\"NYC preference\"}," +
+            "{\"productSupplierId\":\"ps-bandage-acme\",\"destinationPartyId\":\"org-sf-placeholder\"," +
+            "\"preferenceTypeId\":\"pref-type-preferred\",\"comments\":\"SF preference\"}" +
+            "]";
+        mvc.perform(post("/api/productSupplierPreferences/batch")
+                .content(json).contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.length()").value(2))
+            .andExpect(jsonPath("$.data[0].id").isString())
+            .andExpect(jsonPath("$.data[0].createdById").value("test-user"))
+            .andExpect(jsonPath("$.data[1].createdById").value("test-user"));
+    }
+
+    @Test void productSupplierPreferenceBatchPost_upsertUpdatesExistingPairWithoutDuplicating() throws Exception {
+        // Create a preference, then batch-upsert with the same id + modified comments → update, not duplicate.
+        String createJson = "[{\"productSupplierId\":\"ps-bandage-acme\"," +
+            "\"destinationPartyId\":\"org-la-placeholder\",\"preferenceTypeId\":\"pref-type-preferred\"," +
+            "\"comments\":\"LA original\"}]";
+        var result = mvc.perform(post("/api/productSupplierPreferences/batch")
+                .content(createJson).contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andReturn();
+        String id = com.jayway.jsonpath.JsonPath.read(result.getResponse().getContentAsString(), "$.data[0].id");
+
+        // Count existing preferences for ps-bandage-acme BEFORE upsert.
+        var beforeResult = mvc.perform(get("/api/productSupplierPreferences?productSupplier=ps-bandage-acme").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andReturn();
+        int countBefore = com.jayway.jsonpath.JsonPath.read(beforeResult.getResponse().getContentAsString(), "$.data.length()");
+
+        // Upsert: same id, different comments.
+        String upsertJson = "[{\"id\":\"" + id + "\",\"productSupplierId\":\"ps-bandage-acme\"," +
+            "\"destinationPartyId\":\"org-la-placeholder\",\"preferenceTypeId\":\"pref-type-preferred\"," +
+            "\"comments\":\"LA updated\"}]";
+        mvc.perform(post("/api/productSupplierPreferences/batch")
+                .content(upsertJson).contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.length()").value(1))
+            .andExpect(jsonPath("$.data[0].id").value(id))
+            .andExpect(jsonPath("$.data[0].comments").value("LA updated"));
+
+        // Verify count didn't increase (upsert updated, didn't duplicate).
+        mvc.perform(get("/api/productSupplierPreferences?productSupplier=ps-bandage-acme").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.length()").value(countBefore));
+    }
+
+    @Test void productSupplierPreferenceBatchPost_duplicatePairReturns409() throws Exception {
+        // Create one preference, then try to create a second with same (productSupplier, destinationParty) pair → 409.
+        String json1 = "[{\"productSupplierId\":\"ps-bandage-acme\"," +
+            "\"destinationPartyId\":\"org-duplicate-test\",\"preferenceTypeId\":\"pref-type-preferred\"}]";
+        mvc.perform(post("/api/productSupplierPreferences/batch")
+                .content(json1).contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
+            .andExpect(status().isOk());
+
+        // Attempt duplicate pair (different id, same pair).
+        String json2 = "[{\"productSupplierId\":\"ps-bandage-acme\"," +
+            "\"destinationPartyId\":\"org-duplicate-test\",\"preferenceTypeId\":\"pref-type-other\"}]";
+        mvc.perform(post("/api/productSupplierPreferences/batch")
+                .content(json2).contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
+            .andExpect(status().isConflict());  // 409 via DuplicatePreferenceException → GlobalExceptionHandler
+    }
+
+    @Test void productSupplierPreferenceGet_filterByProductSupplier_returnsSupplierPreferences() throws Exception {
+        // GET ?productSupplier=<id> returns only that supplier's preferences (cutover read-GET).
+        mvc.perform(get("/api/productSupplierPreferences?productSupplier=ps-bandage-acme").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data[?(@.id == 'psp-bandage-acme-boston')]").exists())
+            .andExpect(jsonPath("$.data[?(@.productSupplierId == 'ps-bandage-acme')]").exists());
+    }
+
+    @Test void productSupplierPreferenceBatchPost_nullDestinationPartyDuplicateRejected() throws Exception {
+        // A9: pair-uniqueness includes the null-destinationParty case. Create one with null, try to create another → 409.
+        String json1 = "[{\"productSupplierId\":\"ps-bandage-acme\"," +
+            "\"destinationPartyId\":null,\"preferenceTypeId\":\"pref-type-preferred\"}]";
+        mvc.perform(post("/api/productSupplierPreferences/batch")
+                .content(json1).contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
+            .andExpect(status().isOk());
+
+        // Attempt duplicate null-destinationParty pair.
+        String json2 = "[{\"productSupplierId\":\"ps-bandage-acme\"," +
+            "\"destinationPartyId\":null,\"preferenceTypeId\":\"pref-type-other\"}]";
+        mvc.perform(post("/api/productSupplierPreferences/batch")
+                .content(json2).contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
+            .andExpect(status().isConflict());
+    }
+
+    @Test void productSupplierPreferenceBatchPost_twoItemsSamePairInBatchRejected() throws Exception {
+        // In-batch dedup: two items sharing a pair within one batch → 409 (the per-item DB check can't see not-yet-flushed siblings).
+        String json = "[" +
+            "{\"productSupplierId\":\"ps-bandage-acme\",\"destinationPartyId\":\"org-inbatch-dup\"," +
+            "\"preferenceTypeId\":\"pref-type-preferred\"}," +
+            "{\"productSupplierId\":\"ps-bandage-acme\",\"destinationPartyId\":\"org-inbatch-dup\"," +
+            "\"preferenceTypeId\":\"pref-type-other\"}" +
+            "]";
+        mvc.perform(post("/api/productSupplierPreferences/batch")
+                .content(json).contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
+            .andExpect(status().isConflict());
+    }
+
+    @Test void productSupplierPreferenceDelete_then404() throws Exception {
+        // Create a throwaway preference, DELETE → 204, then GET → excludes it.
+        String json = "[{\"productSupplierId\":\"ps-bandage-acme\"," +
+            "\"destinationPartyId\":\"org-delete-test\",\"preferenceTypeId\":\"pref-type-preferred\"}]";
+        var result = mvc.perform(post("/api/productSupplierPreferences/batch")
+                .content(json).contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andReturn();
+        String id = com.jayway.jsonpath.JsonPath.read(result.getResponse().getContentAsString(), "$.data[0].id");
+
+        mvc.perform(delete("/api/productSupplierPreferences/" + id).cookie(authCookie()))
+            .andExpect(status().isNoContent());
+
+        // Verify excluded from list.
+        mvc.perform(get("/api/productSupplierPreferences?productSupplier=ps-bandage-acme").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data[?(@.id == '" + id + "')]").doesNotExist());
+    }
+
+    @Test void productSupplierPreferenceDelete_404OnMissing() throws Exception {
+        mvc.perform(delete("/api/productSupplierPreferences/nonexistent").cookie(authCookie()))
+            .andExpect(status().isNotFound());
+    }
+
+    @Test void productSupplierPreferenceDto_isFlat_noNestedEntities() throws Exception {
+        // FD#2: DTO is flat (productSupplierId, destinationPartyId, preferenceTypeId as raw String ids, no nested entities).
+        mvc.perform(get("/api/productSupplierPreferences?productSupplier=ps-bandage-acme").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data[0].id").isString())
+            .andExpect(jsonPath("$.data[0].productSupplier").doesNotExist())
+            .andExpect(jsonPath("$.data[0].destinationParty").doesNotExist())
+            .andExpect(jsonPath("$.data[0].preferenceType").doesNotExist())
+            .andExpect(jsonPath("$.data[0].productSupplierId").isString())
+            .andExpect(jsonPath("$.data[0].destinationPartyId").isString())
+            .andExpect(jsonPath("$.data[0].preferenceTypeId").isString());
+    }
 }
