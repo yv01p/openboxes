@@ -16,7 +16,7 @@ test.describe('catalog-service /api/productSuppliers (T2 full CRUD)', () => {
         expect(Array.isArray(body.data)).toBeTruthy();
     });
 
-    test('POST creates (proves @Version write path), PUT updates, DELETE removes', async ({ request }) => {
+    test.skip('POST creates (proves @Version write path), PUT updates, DELETE removes', async ({ request }) => { // PARKED until Phase 5.5 cluster-end cutover re-enables /api/productSuppliers routing to catalog-service (CUT).
         const cookie = await login(request);
 
         // ProductSupplier POST needs a real product_id FK. Per suite convention (cf.
@@ -26,6 +26,7 @@ test.describe('catalog-service /api/productSuppliers (T2 full CRUD)', () => {
         const prodRes = await request.get(`${BASE}/api/product`, { headers: { Cookie: cookie } });
         expect(prodRes.status()).toBe(200);
         const prodBody = await prodRes.json();
+        // NOTE: dead while this test is parked; re-activates when CUT un-parks the test — guards against empty-DB false-fail.
         if (!Array.isArray(prodBody.data) || prodBody.data.length === 0) {
             test.skip(true, 'No products in DB — cannot exercise ProductSupplier write path (needs a product_id FK)');
         }
@@ -71,7 +72,7 @@ test.describe('catalog-service /api/productSuppliers (T2 full CRUD)', () => {
         expect(gone.status()).toBe(404);
     });
 
-    test('GET /api/productSuppliers/export stays on Grails (Rule-3 exemption)', async ({ request }) => {
+    test.skip('GET /api/productSuppliers/export stays on Grails (Rule-3 exemption)', async ({ request }) => { // PARKED until Phase 5.5 cluster-end cutover re-enables /api/productSuppliers routing to catalog-service (CUT).
         const cookie = await login(request);
         const res = await request.get(`${BASE}/api/productSuppliers/export`, { headers: { Cookie: cookie } });
         // The point is the route is NOT served by catalog-service (which has no /export). It is proxied
