@@ -452,4 +452,24 @@ class CatalogServiceIntegrationTest {
         mvc.perform(delete("/api/productSuppliers/nonexistent").cookie(authCookie()))
             .andExpect(status().isNotFound());
     }
+
+    // ---------------------------------------------------------------
+    // C2: @RestControllerAdvice — honest 4xx (design §6)
+    // ---------------------------------------------------------------
+
+    @Test void productSupplierPost_missingNotNullProductId_returns409() throws Exception {
+        // Proves @RestControllerAdvice handles DataIntegrityViolationException IN-DISPATCHER,
+        // so the request never forwards to /error (which would re-enter security chain → spurious 401).
+        String json = "{\"name\":\"No Product\",\"supplierId\":\"org-acme-placeholder\"}";
+        mvc.perform(post("/api/productSuppliers")
+                .content(json).contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
+            .andExpect(status().isConflict());  // 409, not 401/500
+    }
+
+    @Test void productSupplierPost_malformedJson_returns400() throws Exception {
+        // Genuinely unparseable JSON → HttpMessageNotReadableException → @RestControllerAdvice → 400.
+        mvc.perform(post("/api/productSuppliers")
+                .content("{not valid json").contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
+            .andExpect(status().isBadRequest());  // 400
+    }
 }
