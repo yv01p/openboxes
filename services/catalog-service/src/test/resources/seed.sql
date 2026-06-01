@@ -142,3 +142,11 @@ INSERT INTO product_association (id, code, product_id, associated_product_id, qu
     ('pa-syr-band', 'SUBSTITUTE', 'p-syringe', 'p-bandage', 1.00, 'Syringe substitutes Bandage', 0, NOW(), NOW(), 'pa-band-syr'),
     ('pa-band-iv', 'ACCESSORY', 'p-bandage', 'p-iv-drip', 2.50, NULL, 0, NOW(), NOW(), NULL);
 UPDATE product_association SET mutual_association_id = 'pa-syr-band' WHERE id = 'pa-band-syr';
+
+-- product_component (T10). GET-only; timestamp-only Instant audit (date_created/last_updated NOT NULL).
+-- BOM lines: an assembly product made of component products (qty + uom). All 3 FKs NOT NULL.
+-- GET-only, no sibling writers -> count assertion of 3 is deterministic.
+INSERT INTO product_component (id, assembly_product_id, component_product_id, quantity, unit_of_measure_id, version, date_created, last_updated) VALUES
+    ('pcomp-band-syr', 'p-bandage', 'p-syringe', 2.00, 'uom-pc', 0, NOW(), NOW()),
+    ('pcomp-band-iv', 'p-bandage', 'p-iv-drip', 1.00, 'uom-pc', 0, NOW(), NOW()),
+    ('pcomp-syr-iv', 'p-syringe', 'p-iv-drip', 3.00, 'uom-pc', 0, NOW(), NOW());

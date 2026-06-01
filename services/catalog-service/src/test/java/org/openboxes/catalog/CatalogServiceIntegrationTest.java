@@ -64,6 +64,9 @@ class CatalogServiceIntegrationTest {
     // T9 ProductAssociation is repo-backed (no cache) — service injected for the N+1 query-count proof
     // (reuses the EMF field above). generate_statistics is already enabled in @DynamicPropertySource.
     @Autowired org.openboxes.catalog.service.ProductAssociationService productAssociationService;
+    // T10 ProductComponent is repo-backed (no cache) — service injected for the N+1 query-count proof
+    // (reuses the EMF field above). generate_statistics is already enabled in @DynamicPropertySource.
+    @Autowired org.openboxes.catalog.service.ProductComponentService productComponentService;
 
     private static final String TEST_SECRET = "test-secret-32-chars-minimum-for-hs256-key";
 
@@ -1236,4 +1239,60 @@ class CatalogServiceIntegrationTest {
     // Test-only repository wiring for the seeded-link / orphan-delete repo-level assertions (mirrors the
     // cache-inject convention). Kept in the test to avoid widening the production API for a test.
     @Autowired org.openboxes.catalog.repository.ProductPackageRepository productPackageRepo;
+
+    // ---------------------------------------------------------------
+    // ProductComponent (T10) — GET-only repo-backed read entity (zero React callers; FD#1). NO cache
+    // (Grails domain has no `cache true`). Instant timestamp-only audit (date_created/last_updated NOT
+    // NULL). BOM line: assemblyProduct/componentProduct/unitOfMeasure all NOT NULL (no Grails-vs-live
+    // deviation). Writes stay Grails-side (GSP ProductController; no validator to port). No sibling
+    // writers (GET-only) → count-of-3 assertions are deterministic. Plus the N+1 proof.
+    // ---------------------------------------------------------------
+
+    @Test void productComponentList_returnsSeeded() throws Exception {
+        mvc.perform(get("/api/productComponents").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.length()").value(3))
+            .andExpect(jsonPath("$.data[?(@.id == 'pcomp-band-syr')]").exists());
+    }
+
+    @Test void productComponentGet_flatDto() throws Exception {
+        mvc.perform(get("/api/productComponents/pcomp-band-syr").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.id").value("pcomp-band-syr"))
+            .andExpect(jsonPath("$.data.assemblyProductId").value("p-bandage"))
+            .andExpect(jsonPath("$.data.componentProductId").value("p-syringe"))
+            .andExpect(jsonPath("$.data.quantity").value(2.00))
+            .andExpect(jsonPath("$.data.unitOfMeasureId").value("uom-pc"));
+    }
+
+    @Test void productComponentGet_404OnMissing() throws Exception {
+        mvc.perform(get("/api/productComponents/pcomp-nonexistent").cookie(authCookie()))
+            .andExpect(status().isNotFound());
+    }
+
+    @Test void productComponentGet_dtoFlatness_noNestedFKEntities() throws Exception {
+        // FD#2/FD#3: flat FK strings only — no nested {assemblyProduct:{...}} / {componentProduct:{...}} /
+        // {unitOfMeasure:{...}}.
+        mvc.perform(get("/api/productComponents/pcomp-band-syr").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.assemblyProduct").doesNotExist())
+            .andExpect(jsonPath("$.data.componentProduct").doesNotExist())
+            .andExpect(jsonPath("$.data.unitOfMeasure").doesNotExist());
+    }
+
+    @Test void productComponentList_noN1_boundedQueryCount() {
+        // N+1 proof: LAZY FKs + a DTO that reads only .getId() (the proxy id is populated without
+        // initialization → no DB hit) means findAll() emits a SINGLE SELECT regardless of row count —
+        // all 3 LAZY FKs (assemblyProduct/componentProduct/unitOfMeasure) are read as proxy ids only.
+        // We deliberately did NOT use @EntityGraph. Hibernate statistics enabled via @DynamicPropertySource.
+        // NOTE: reads the process-global SessionFactory statistics counter, correct ONLY while the suite
+        // runs single-threaded/sequentially (no parallel test execution is configured). If concurrency is
+        // ever enabled, scope the count to one session instead of the global counter, or this goes flaky.
+        org.hibernate.stat.Statistics stats =
+            emf.unwrap(org.hibernate.SessionFactory.class).getStatistics();
+        stats.clear();
+        var result = productComponentService.list();
+        assertThat(result).hasSizeGreaterThanOrEqualTo(2);   // ≥2 rows so a single query proves no fan-out
+        assertThat(stats.getPrepareStatementCount()).isEqualTo(1L);   // exactly ONE JDBC statement for N rows → no N+1
+    }
 }

@@ -22,4 +22,5 @@
     <include file="db/changelog/changelog-shadow-create-product-catalog-item.xml"/>
     <include file="db/changelog/changelog-shadow-create-product-attribute.xml"/>
     <include file="db/changelog/changelog-shadow-create-product-association.xml"/>
+    <include file="db/changelog/changelog-shadow-create-product-component.xml"/>
 </databaseChangeLog>
