@@ -3,6 +3,7 @@ package org.openboxes.catalog;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.openboxes.catalog.cache.AttributeCache;
+import org.openboxes.catalog.cache.ProductCatalogCache;
 import org.openboxes.catalog.cache.ProductTypeCache;
 import org.openboxes.catalog.cache.UnitOfMeasureCache;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -51,6 +52,7 @@ class CatalogServiceIntegrationTest {
     @Autowired UnitOfMeasureCache uomCache;
     @Autowired ProductTypeCache productTypeCache;
     @Autowired AttributeCache attributeCache;
+    @Autowired ProductCatalogCache productCatalogCache;
 
     private static final String TEST_SECRET = "test-secret-32-chars-minimum-for-hs256-key";
 
@@ -66,6 +68,7 @@ class CatalogServiceIntegrationTest {
     void clearCaches() {
         productTypeCache.clear();
         attributeCache.clear();
+        productCatalogCache.clear();
     }
 
     private String validToken() {
@@ -264,6 +267,59 @@ class CatalogServiceIntegrationTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.length()").value(2));
         assertThat(attributeCache.getAll()).hasSize(2);
+    }
+
+    // ---------------------------------------------------------------
+    // ProductCatalog (T6) — GET-only cache-with-refresh read entity (zero React callers).
+    // NOT @Transactional: commits to the shared DB, but product_catalog has no sibling writers
+    // (GET-only), so the count-of-2 assertions are deterministic.
+    // ---------------------------------------------------------------
+
+    @Test void productCatalogList_returnsSeeded() throws Exception {
+        mvc.perform(get("/api/productCatalogs").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.length()").value(2))
+            .andExpect(jsonPath("$.data[?(@.id == 'pc-essential')]").exists());
+    }
+
+    @Test void productCatalogGet_flatDto() throws Exception {
+        mvc.perform(get("/api/productCatalogs/pc-essential").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.id").value("pc-essential"))
+            .andExpect(jsonPath("$.data.code").value("ESSENTIAL"))
+            .andExpect(jsonPath("$.data.name").value("Essential Medicines"))
+            .andExpect(jsonPath("$.data.active").value(true));
+    }
+
+    @Test void productCatalogGet_falseActiveAndNullFieldsRoundTrip() throws Exception {
+        // pc-trauma seeds active=0 + NULL description/color: proves the bit(1)->Boolean read returns
+        // false (not the constructor default true), and that nullable columns surface as JSON null.
+        mvc.perform(get("/api/productCatalogs/pc-trauma").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.active").value(false))
+            .andExpect(jsonPath("$.data.code").value("TRAUMA"))
+            .andExpect(jsonPath("$.data.description").value(org.hamcrest.Matchers.nullValue()))
+            .andExpect(jsonPath("$.data.color").value(org.hamcrest.Matchers.nullValue()));
+    }
+
+    @Test void productCatalogGet_404OnMissing() throws Exception {
+        mvc.perform(get("/api/productCatalogs/pc-nonexistent").cookie(authCookie()))
+            .andExpect(status().isNotFound());
+    }
+
+    @Test void productCatalogGet_dtoFlatness_noNestedCollection() throws Exception {
+        // T7 forward-decl: productCatalogItems inverse collection is not mapped, so it must not appear.
+        mvc.perform(get("/api/productCatalogs/pc-essential").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.productCatalogItems").doesNotExist());
+    }
+
+    @Test void productCatalogCache_refreshOnEmptyServesFromSeed() throws Exception {
+        // Cache cleared in @BeforeEach for test isolation; first call populates + serves.
+        mvc.perform(get("/api/productCatalogs").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.length()").value(2));
+        assertThat(productCatalogCache.getAll()).hasSize(2);
     }
 
     // ---------------------------------------------------------------

@@ -107,3 +107,9 @@ INSERT INTO product_package (id, name, description, gtin, quantity, product_id, 
 -- currency_id references seeded uom-pc; from_date/to_date and audit columns are nullable.
 INSERT INTO product_price (id, version, type, price, currency_id, from_date, to_date, date_created, last_updated) VALUES
     ('pp-price-acme', 0, 'DEFAULT_PRICE', 9.9900, 'uom-pc', NULL, NULL, NOW(), NOW());
+
+-- 2 ProductCatalog (T6). code is NOT NULL UNIQUE; version/date_created/last_updated NOT NULL.
+-- GET-only entity (zero React callers); no sibling writers, so the count assertion of 2 is safe.
+INSERT INTO product_catalog (id, version, code, name, description, active, color, date_created, last_updated) VALUES
+    ('pc-essential', 0, 'ESSENTIAL', 'Essential Medicines', 'Core essential list', 1, '#ff0000', NOW(), NOW()),
+    ('pc-trauma', 0, 'TRAUMA', 'Trauma Kit', NULL, 0, NULL, NOW(), NOW());
