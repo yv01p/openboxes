@@ -15,6 +15,12 @@ public record ProductSupplierDto(
     String description,
     String productCode,
     String productId,
+    // Read-only/derived: the list page (Task LQ) shows a Product-Name column. Populated in from()
+    // from ps.product.name (loaded via the @EntityGraph on the list query — no N+1; the single-row
+    // get/post/put paths trigger one cheap lazy load). applyTo() IGNORES this (never written). It is a
+    // flat String, NOT a nested `product` object, so the flatness test (productSupplierGet_dtoIsFlat_*)
+    // still passes.
+    String productName,
     String ndc,
     String upc,
     String manufacturerId,
@@ -46,6 +52,8 @@ public record ProductSupplierDto(
             ps.getDescription(),
             ps.getProductCode(),
             ps.getProduct() == null ? null : ps.getProduct().getId(),
+            // productName (read-only): from the product association (fetched by the list @EntityGraph).
+            ps.getProduct() == null ? null : ps.getProduct().getName(),
             ps.getNdc(),
             ps.getUpc(),
             ps.getManufacturerId(),

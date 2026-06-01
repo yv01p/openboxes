@@ -9,11 +9,15 @@ import org.openboxes.catalog.repository.ProductPackageRepository;
 import org.openboxes.catalog.repository.ProductPriceRepository;
 import org.openboxes.catalog.repository.ProductRepository;
 import org.openboxes.catalog.repository.ProductSupplierRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 // First WRITE service in catalog-service (T2 canonical template). Verb scope = full CRUD.
@@ -40,8 +44,45 @@ public class ProductSupplierService {
         this.productPriceRepo = productPriceRepo;
     }
 
-    public List<ProductSupplierDto> list() {
-        return repo.findAll().stream().map(ProductSupplierDto::from).toList();
+    // Task LQ: allowlist of ProductSupplier scalar/string properties a client may sort by. Any sort
+    // outside this set (or null) falls back to dateCreated, so a client-supplied `sort` can never raise
+    // PropertyReferenceException (→ 500). dateCreated MUST be present: it is the hook's default sort.
+    private static final Set<String> SORTABLE = Set.of(
+        "code", "name", "productCode", "supplierName", "supplierCode",
+        "manufacturerName", "ratingTypeCode", "active", "dateCreated", "lastUpdated"
+    );
+    private static final String DEFAULT_SORT = "dateCreated";
+
+    // Task LQ: the Product Sources list page. Returns a bare ProductSupplierListResult (data +
+    // totalCount); the controller wraps it in the {data, totalCount} transport map the React table
+    // hook (useTableData) reads (res.data.data + res.data.totalCount, pages = ceil(totalCount /
+    // pageSize)). All filters are optional (the hook strips empty values).
+    public ProductSupplierListResult list(
+        String product,
+        String supplier,
+        List<String> preferenceTypes,
+        Integer offset,
+        Integer max,
+        String sort,
+        String order
+    ) {
+        int pageSize = (max == null || max <= 0) ? 10 : max;
+        int off = (offset == null || offset < 0) ? 0 : offset;
+        int page = off / pageSize;
+
+        String sortProp = (sort != null && SORTABLE.contains(sort)) ? sort : DEFAULT_SORT;
+        Sort.Direction dir = "asc".equalsIgnoreCase(order) ? Sort.Direction.ASC : Sort.Direction.DESC;
+        PageRequest pageable = PageRequest.of(page, pageSize, Sort.by(dir, sortProp));
+
+        // Normalize an absent/empty preferenceTypes list to null so the repository null-guard treats it
+        // as "no filter" (JPQL `IN ()` on an empty collection is invalid in some providers).
+        List<String> prefs = (preferenceTypes == null || preferenceTypes.isEmpty()) ? null : preferenceTypes;
+
+        Page<ProductSupplier> result = repo.findFiltered(product, supplier, prefs, pageable);
+        return new ProductSupplierListResult(
+            result.getContent().stream().map(ProductSupplierDto::from).toList(),
+            result.getTotalElements()
+        );
     }
 
     public Optional<ProductSupplierDto> get(String id) {

@@ -358,10 +358,15 @@ class CatalogServiceIntegrationTest {
     // ---------------------------------------------------------------
 
     @Test void productSupplierList_returnsSeededRow() throws Exception {
-        mvc.perform(get("/api/productSuppliers").cookie(authCookie()))
+        // Task LQ: a no-param GET under the new default pagination (max=10) could drop ps-bandage-acme
+        // off page 0 once sibling POST tests add rows, so pin the seeded row with a real-shaped filter
+        // (supplier=org-acme-placeholder, which only ps-bandage-acme uses). Assert the {data, totalCount}
+        // envelope: the seeded row is present and totalCount >= 1.
+        mvc.perform(get("/api/productSuppliers?supplier=org-acme-placeholder").cookie(authCookie()))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.length()").value(org.hamcrest.Matchers.greaterThanOrEqualTo(1)))
-            .andExpect(jsonPath("$.data[?(@.id == 'ps-bandage-acme')]").exists());
+            .andExpect(jsonPath("$.data[?(@.id == 'ps-bandage-acme')]").exists())
+            .andExpect(jsonPath("$.totalCount").value(org.hamcrest.Matchers.greaterThanOrEqualTo(1)));
     }
 
     @Test void productSupplierGet_404OnMissing() throws Exception {
@@ -471,6 +476,115 @@ class CatalogServiceIntegrationTest {
         mvc.perform(post("/api/productSuppliers")
                 .content("{not valid json").contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
             .andExpect(status().isBadRequest());  // 400
+    }
+
+    // ---------------------------------------------------------------
+    // ProductSupplier list-query (Task LQ) — the React "Product Sources" list page (design §5).
+    // Tests use the REAL list-page param/response shapes (per the C3 synthetic-payload lesson): the hook
+    // sends product/supplier/defaultPreferenceTypes (ids) + offset/max/sort/order and REQUIRES the
+    // {data, totalCount} envelope (it reads res.data.data + res.data.totalCount, computes
+    // pages = ceil(totalCount / pageSize)). Fixtures use a DEDICATED org (org-lq-globex) and the
+    // p-syringe/p-iv-drip products no sibling POST test writes a supplier row against, so every count
+    // assertion below is deterministic against the shared committed test DB.
+    // ---------------------------------------------------------------
+
+    @Test void productSupplierList_envelopeIsExactlyDataAndTotalCount() throws Exception {
+        // The envelope MUST be exactly {data, totalCount}. If totalCount is missing the hook's
+        // pages = ceil(totalCount/pageSize) becomes NaN — the bug this task fixes.
+        mvc.perform(get("/api/productSuppliers?supplier=org-lq-globex").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data").isArray())
+            .andExpect(jsonPath("$.totalCount").isNumber())
+            .andExpect(jsonPath("$.pages").doesNotExist())
+            .andExpect(jsonPath("$.content").doesNotExist());
+    }
+
+    @Test void productSupplierList_filterByProduct() throws Exception {
+        // product = product id. p-syringe has exactly one LQ fixture supplier (and no sibling POSTs).
+        mvc.perform(get("/api/productSuppliers?product=p-syringe").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.totalCount").value(1))
+            .andExpect(jsonPath("$.data.length()").value(1))
+            .andExpect(jsonPath("$.data[0].id").value("ps-lq-syringe-globex"))
+            .andExpect(jsonPath("$.data[0].productId").value("p-syringe"));
+    }
+
+    @Test void productSupplierList_filterBySupplier() throws Exception {
+        // supplier = org id. org-lq-globex has exactly the 3 LQ fixture rows.
+        mvc.perform(get("/api/productSuppliers?supplier=org-lq-globex").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.totalCount").value(3))
+            .andExpect(jsonPath("$.data.length()").value(3))
+            .andExpect(jsonPath("$.data[?(@.id == 'ps-lq-syringe-globex')]").exists())
+            .andExpect(jsonPath("$.data[?(@.id == 'ps-lq-iv-multi')]").exists())
+            .andExpect(jsonPath("$.data[?(@.id == 'ps-lq-iv-extra')]").exists());
+    }
+
+    @Test void productSupplierList_filterByDefaultPreferenceTypes_existsCountsSupplierOnce() throws Exception {
+        // ps-lq-iv-multi has TWO preferences (pref-type-default AND pref-type-backup). Filtering by BOTH
+        // types must return that supplier exactly ONCE with totalCount = 1 — a plain JOIN would
+        // duplicate it (2 matching prefs → 2 rows) and inflate totalCount to 2. This guards the
+        // EXISTS-not-JOIN choice. Scope to product=p-iv-drip so ps-lq-iv-extra (no prefs) is excluded
+        // and only ps-lq-iv-multi can match.
+        mvc.perform(get("/api/productSuppliers?product=p-iv-drip"
+                + "&defaultPreferenceTypes=pref-type-default&defaultPreferenceTypes=pref-type-backup")
+                .cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.totalCount").value(1))
+            .andExpect(jsonPath("$.data.length()").value(1))
+            .andExpect(jsonPath("$.data[0].id").value("ps-lq-iv-multi"));
+    }
+
+    @Test void productSupplierList_totalCountIsFullFilteredCount_notPageSize() throws Exception {
+        // With 3 org-lq-globex rows and max=2, the page carries 2 rows but totalCount is the full
+        // filtered count (3), and data.length <= max. Proves totalCount != page size.
+        mvc.perform(get("/api/productSuppliers?supplier=org-lq-globex&max=2&offset=0").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.totalCount").value(3))
+            .andExpect(jsonPath("$.data.length()").value(2));
+    }
+
+    @Test void productSupplierList_sortByNameAsc_ordersRows() throws Exception {
+        // sort=name, order=asc over the 3 org-lq-globex rows:
+        //   "IV Drip Extra from Globex" < "IV Drip from Globex" < "Syringe from Globex".
+        mvc.perform(get("/api/productSuppliers?supplier=org-lq-globex&sort=name&order=asc").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.length()").value(3))
+            .andExpect(jsonPath("$.data[0].id").value("ps-lq-iv-extra"))
+            .andExpect(jsonPath("$.data[1].id").value("ps-lq-iv-multi"))
+            .andExpect(jsonPath("$.data[2].id").value("ps-lq-syringe-globex"));
+    }
+
+    @Test void productSupplierList_sortByDateCreatedDesc_isHookDefault() throws Exception {
+        // The hook's default sort: {sort: 'dateCreated', order: 'desc'}. The 3 fixtures have staggered
+        // date_created (iv-extra newest → syringe oldest), so desc order is extra > multi > syringe.
+        mvc.perform(get("/api/productSuppliers?supplier=org-lq-globex&sort=dateCreated&order=desc").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.length()").value(3))
+            .andExpect(jsonPath("$.data[0].id").value("ps-lq-iv-extra"))
+            .andExpect(jsonPath("$.data[1].id").value("ps-lq-iv-multi"))
+            .andExpect(jsonPath("$.data[2].id").value("ps-lq-syringe-globex"));
+    }
+
+    @Test void productSupplierList_outOfAllowlistSort_fallsBackToDateCreated_not500() throws Exception {
+        // A client-supplied sort outside the allowlist (here a real association nav that would raise
+        // PropertyReferenceException → 500 if passed straight through) must fall back to dateCreated, not 500.
+        mvc.perform(get("/api/productSuppliers?supplier=org-lq-globex&sort=product.name.bogus&order=asc").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.totalCount").value(3))
+            // sort falls back to dateCreated; direction still honors the supplied order=asc → oldest first (syringe, multi, extra).
+            .andExpect(jsonPath("$.data[0].id").value("ps-lq-syringe-globex"))
+            .andExpect(jsonPath("$.data[1].id").value("ps-lq-iv-multi"))
+            .andExpect(jsonPath("$.data[2].id").value("ps-lq-iv-extra"));
+    }
+
+    @Test void productSupplierList_rowsCarryProductName() throws Exception {
+        // The list page shows a Product-Name column: rows must carry productName (read-only/derived,
+        // fetched via the @EntityGraph — no N+1). It is a flat String, not a nested product object.
+        mvc.perform(get("/api/productSuppliers?product=p-syringe").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data[0].productName").value("Syringe"))
+            .andExpect(jsonPath("$.data[0].product").doesNotExist());
     }
 
     // ---------------------------------------------------------------

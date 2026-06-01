@@ -72,6 +72,30 @@ INSERT INTO product_supplier (id, code, name, product_id, supplier_id, active, t
 INSERT INTO product_supplier_preference (id, product_supplier_id, destination_party_id, preference_type_id, comments, version, date_created, last_updated) VALUES
     ('psp-bandage-acme-boston', 'ps-bandage-acme', 'org-boston-placeholder', 'pref-type-default', 'Preferred for Boston', 0, NOW(), NOW());
 
+-- Task LQ list-page fixtures. Isolated to NEW supplier ids (ps-lq-*) so the T2–T5 tests (which key on
+-- ps-bandage-acme + its single preference) are untouched. Deliberately use a DEDICATED supplier org
+-- (org-lq-globex) and products (p-syringe / p-iv-drip) that NO sibling POST test writes a
+-- product_supplier row against — because these tests COMMIT and run order-independently, a filter value
+-- shared with a sibling POST (e.g. org-globex-placeholder, which productSupplierPost_createsRow_* posts)
+-- would give a non-deterministic count. Explicit, staggered date_created values (NOT NOW()) so the
+-- sort-order tests are deterministic.
+--   - ps-lq-syringe-globex: product p-syringe — exercises filter-by-product and filter-by-supplier.
+--   - ps-lq-iv-multi: product p-iv-drip, with TWO preferences of TWO different types (pref-type-default
+--     AND pref-type-backup) — proves the EXISTS filter counts this supplier ONCE (totalCount = 1),
+--     guarding the EXISTS-not-JOIN choice.
+--   - ps-lq-iv-extra: a 3rd org-lq-globex row so a small max (max=2) on the org-lq-globex filter yields
+--     data.length(2) < totalCount(3) — the pagination assertion.
+-- All NOT NULL mapped columns populated: name, product_id, tiered_pricing, version, date_created, last_updated.
+INSERT INTO product_supplier (id, code, name, product_id, supplier_id, active, tiered_pricing, version, date_created, last_updated) VALUES
+    ('ps-lq-syringe-globex', 'PS-SYR-GLX', 'Syringe from Globex', 'p-syringe', 'org-lq-globex', 1, 0, 0, '2024-01-01 10:00:00', '2024-01-01 10:00:00'),
+    ('ps-lq-iv-multi', 'PS-IVD-GLX', 'IV Drip from Globex', 'p-iv-drip', 'org-lq-globex', 1, 0, 0, '2024-01-02 10:00:00', '2024-01-02 10:00:00'),
+    ('ps-lq-iv-extra', 'PS-IVD-GLX2', 'IV Drip Extra from Globex', 'p-iv-drip', 'org-lq-globex', 1, 0, 0, '2024-01-03 10:00:00', '2024-01-03 10:00:00');
+
+-- Two preferences of two DIFFERENT types on the SAME supplier (ps-lq-iv-multi) — the EXISTS-counts-once fixture.
+INSERT INTO product_supplier_preference (id, product_supplier_id, destination_party_id, preference_type_id, comments, version, date_created, last_updated) VALUES
+    ('psp-lq-iv-default', 'ps-lq-iv-multi', 'org-globex-placeholder', 'pref-type-default', 'IV default pref', 0, NOW(), NOW()),
+    ('psp-lq-iv-backup', 'ps-lq-iv-multi', 'org-globex-placeholder', 'pref-type-backup', 'IV backup pref', 0, NOW(), NOW());
+
 -- 1 ProductPackage (T4). Fixture references p-bandage, ps-bandage-acme, uom-pc.
 -- All NOT NULL columns the entity maps are populated: quantity, version, date_created, last_updated.
 -- product_price_id is NOT referenced here (the productPrice association is unmapped at T4, so the
