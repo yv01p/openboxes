@@ -19,4 +19,5 @@
     <include file="db/changelog/changelog-shadow-create-product-package.xml"/>
     <include file="db/changelog/changelog-shadow-create-product-price.xml"/>
     <include file="db/changelog/changelog-shadow-create-product-catalog.xml"/>
+    <include file="db/changelog/changelog-shadow-create-product-catalog-item.xml"/>
 </databaseChangeLog>

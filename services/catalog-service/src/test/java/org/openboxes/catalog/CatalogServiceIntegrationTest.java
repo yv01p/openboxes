@@ -4,6 +4,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.openboxes.catalog.cache.AttributeCache;
 import org.openboxes.catalog.cache.ProductCatalogCache;
+import org.openboxes.catalog.cache.ProductCatalogItemCache;
 import org.openboxes.catalog.cache.ProductTypeCache;
 import org.openboxes.catalog.cache.UnitOfMeasureCache;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -53,6 +54,7 @@ class CatalogServiceIntegrationTest {
     @Autowired ProductTypeCache productTypeCache;
     @Autowired AttributeCache attributeCache;
     @Autowired ProductCatalogCache productCatalogCache;
+    @Autowired ProductCatalogItemCache productCatalogItemCache;
 
     private static final String TEST_SECRET = "test-secret-32-chars-minimum-for-hs256-key";
 
@@ -69,6 +71,7 @@ class CatalogServiceIntegrationTest {
         productTypeCache.clear();
         attributeCache.clear();
         productCatalogCache.clear();
+        productCatalogItemCache.clear();
     }
 
     private String validToken() {
@@ -320,6 +323,57 @@ class CatalogServiceIntegrationTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.length()").value(2));
         assertThat(productCatalogCache.getAll()).hasSize(2);
+    }
+
+    // ---------------------------------------------------------------
+    // ProductCatalogItem (T7) — GET-only cache-with-refresh read entity (zero React callers).
+    // NOT @Transactional: commits to the shared DB, but product_catalog_item has no sibling writers
+    // (GET-only), so the count-of-3 assertions are deterministic.
+    // ---------------------------------------------------------------
+
+    @Test void productCatalogItemList_returnsSeeded() throws Exception {
+        mvc.perform(get("/api/productCatalogItems").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.length()").value(3))
+            .andExpect(jsonPath("$.data[?(@.id == 'pci-ess-bandage')]").exists());
+    }
+
+    @Test void productCatalogItemGet_flatDto() throws Exception {
+        mvc.perform(get("/api/productCatalogItems/pci-ess-bandage").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.id").value("pci-ess-bandage"))
+            .andExpect(jsonPath("$.data.productId").value("p-bandage"))
+            .andExpect(jsonPath("$.data.productCatalogId").value("pc-essential"))
+            .andExpect(jsonPath("$.data.active").value(true));
+    }
+
+    @Test void productCatalogItemGet_404OnMissing() throws Exception {
+        mvc.perform(get("/api/productCatalogItems/pci-nonexistent").cookie(authCookie()))
+            .andExpect(status().isNotFound());
+    }
+
+    @Test void productCatalogItemGet_dtoFlatness_noNestedFKEntities() throws Exception {
+        // FD#2/FD#3: flat FK strings only — no nested {product:{...}} / {productCatalog:{...}}.
+        mvc.perform(get("/api/productCatalogItems/pci-ess-bandage").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.product").doesNotExist())
+            .andExpect(jsonPath("$.data.productCatalog").doesNotExist());
+    }
+
+    @Test void productCatalogItemGet_falseActiveRoundTrip() throws Exception {
+        // pci-trauma-bandage seeds active=0: proves the bit(1)->Boolean read returns false, not the
+        // constructor default true.
+        mvc.perform(get("/api/productCatalogItems/pci-trauma-bandage").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.active").value(false));
+    }
+
+    @Test void productCatalogItemCache_refreshOnEmptyServesFromSeed() throws Exception {
+        // Cache cleared in @BeforeEach for test isolation; first call populates + serves.
+        mvc.perform(get("/api/productCatalogItems").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.length()").value(3));
+        assertThat(productCatalogItemCache.getAll()).hasSize(3);
     }
 
     // ---------------------------------------------------------------

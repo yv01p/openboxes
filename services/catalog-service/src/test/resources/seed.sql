@@ -113,3 +113,12 @@ INSERT INTO product_price (id, version, type, price, currency_id, from_date, to_
 INSERT INTO product_catalog (id, version, code, name, description, active, color, date_created, last_updated) VALUES
     ('pc-essential', 0, 'ESSENTIAL', 'Essential Medicines', 'Core essential list', 1, '#ff0000', NOW(), NOW()),
     ('pc-trauma', 0, 'TRAUMA', 'Trauma Kit', NULL, 0, NULL, NOW(), NOW());
+
+-- 3 ProductCatalogItem (T7). active bit(1) NOT NULL; product_id + product_catalog_id NOT NULL FKs.
+-- References the seeded products (p-bandage, p-syringe) + the T6 catalogs (pc-essential, pc-trauma).
+-- GET-only entity (zero React callers); no sibling writers, so the count assertion of 3 is safe.
+-- pci-trauma-bandage seeds active=0 for the bit(1)->Boolean false round-trip.
+INSERT INTO product_catalog_item (id, version, active, product_id, product_catalog_id, date_created, last_updated) VALUES
+    ('pci-ess-bandage', 0, 1, 'p-bandage', 'pc-essential', NOW(), NOW()),
+    ('pci-ess-syringe', 0, 1, 'p-syringe', 'pc-essential', NOW(), NOW()),
+    ('pci-trauma-bandage', 0, 0, 'p-bandage', 'pc-trauma', NOW(), NOW());

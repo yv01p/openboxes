@@ -6,6 +6,7 @@ import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.time.Instant;
+import java.util.List;
 
 // GET-only cache-with-refresh entity (T6). Grails domain has `cache true`; mirrors the
 // ProductType/Attribute read-entity pattern (protected ctor, getters only — no setters).
@@ -18,9 +19,6 @@ import java.time.Instant;
 // audit-shape so this stays forward-compatible if a write path is ever added. Uses Instant,
 // mirroring ProductSupplier.java's audit block.
 //
-// T7 forward-decl split: OMIT the productCatalogItems inverse collection. T7 (ProductCatalogItem)
-// will append @OneToMany(mappedBy="productCatalog") once that child entity/table exists (mirror how
-// ProductSupplier.java documents its T4/T5 forward-decl appends).
 @Entity
 @Table(name = "product_catalog")
 @EntityListeners(AuditingEntityListener.class)
@@ -56,6 +54,14 @@ public class ProductCatalog {
     @Column(name = "last_updated", nullable = false)
     private Instant lastUpdated;
 
+    // T7 forward-decl appendback: the inverse side of ProductCatalogItem.productCatalog. Mapped for
+    // ORM/Grails-domain fidelity (Grails hasMany productCatalogItems). LAZY. NOT surfaced in
+    // ProductCatalogDto: ProductCatalog is cache-served, and initializing a lazy collection off a
+    // cached/detached entity would risk LazyInitializationException; no consumer needs it (GET-only,
+    // zero React callers). The cache path stays scalar/proxy-id-only-safe.
+    @OneToMany(mappedBy = "productCatalog", fetch = FetchType.LAZY)
+    private List<ProductCatalogItem> productCatalogItems;
+
     // Read entity: protected no-arg ctor + getters only (mirrors ProductType.java).
     protected ProductCatalog() {}
 
@@ -68,4 +74,5 @@ public class ProductCatalog {
     public Long getVersion() { return version; }
     public Instant getDateCreated() { return dateCreated; }
     public Instant getLastUpdated() { return lastUpdated; }
+    public List<ProductCatalogItem> getProductCatalogItems() { return productCatalogItems; }
 }
