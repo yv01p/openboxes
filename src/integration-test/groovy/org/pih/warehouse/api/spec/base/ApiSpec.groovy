@@ -16,7 +16,6 @@ import spock.lang.Shared
 import org.pih.warehouse.api.client.base.AuthenticatedApiContext
 import org.pih.warehouse.api.client.base.UnauthenticatedApiContext
 import org.pih.warehouse.api.client.inventory.RecordStockApiWrapper
-import org.pih.warehouse.api.client.product.CategoryApiWrapper
 import org.pih.warehouse.api.client.product.ProductApiWrapper
 import org.pih.warehouse.api.util.JsonObjectUtil
 import org.pih.warehouse.common.base.IntegrationSpec
@@ -93,9 +92,6 @@ abstract class ApiSpec extends IntegrationSpec {
 
     @Autowired
     ProductApiWrapper productApiWrapper
-
-    @Autowired
-    CategoryApiWrapper categoryApiWrapper
 
     @Autowired
     AuthApiWrapper authApiWrapper
@@ -241,10 +237,10 @@ abstract class ApiSpec extends IntegrationSpec {
     }
 
     private Category createRootCategory() {
-        return categoryApiWrapper.createOK(new CategoryTestBuilder()
+        return new CategoryTestBuilder()
                 .name("Test Root Category")
                 .rootCategory()
-                .build())
+                .build(true)
     }
 
     /**

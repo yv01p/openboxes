@@ -42,15 +42,6 @@ class UrlMappings {
 
         // REST APIs with complex resource names or subresources
 
-        "/api/categories"(parseRequest: true) {
-            controller = { "categoryApi" }
-            action = [GET: "list", POST: "save"]
-        }
-        "/api/categories/$id"(parseRequest: true) {
-            controller = { "categoryApi" }
-            action = [GET: "read", POST: "save", PUT: "save", DELETE: "delete"]
-        }
-
         // Category options for filters on  product list page
         "/api/categoryOptions"(parseRequest: true) {
             controller = { "selectOptionsApi" }

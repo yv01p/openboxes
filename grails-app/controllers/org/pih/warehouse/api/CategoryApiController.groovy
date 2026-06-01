@@ -15,6 +15,10 @@ import grails.validation.ValidationException
 import org.hibernate.ObjectNotFoundException
 import org.pih.warehouse.product.Category
 
+// Phase 5.5 T13 (partial RC-13): the /api/categories URL mappings + SecurityInterceptor entry + the
+// Grails-side Category API integration/unit tests were removed (catalog-service now owns /api/category).
+// This controller is intentionally KEPT: runtime.groovy:757 still wires a dashboard fillRate filter to
+// "/categoryApi/list". Full removal is a Phase-6 inventory-blocker cleanup.
 @Transactional
 class CategoryApiController {
 
