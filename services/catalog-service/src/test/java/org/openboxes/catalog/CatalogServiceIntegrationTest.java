@@ -47,6 +47,9 @@ class CatalogServiceIntegrationTest {
         r.add("spring.jpa.defer-datasource-initialization", () -> "true");
         r.add("spring.sql.init.data-locations", () -> "classpath:seed.sql");
         r.add("spring.sql.init.mode", () -> "always");  // override "embedded" default; runs against TestContainers MariaDB
+        // T8 N+1 proof: enable Hibernate statistics so productAttributeList_noN1_boundedQueryCount can
+        // assert the JDBC statement count for findAll(). Benign for all other tests.
+        r.add("spring.jpa.properties.hibernate.generate_statistics", () -> "true");
     }
 
     @Autowired MockMvc mvc;
@@ -55,6 +58,9 @@ class CatalogServiceIntegrationTest {
     @Autowired AttributeCache attributeCache;
     @Autowired ProductCatalogCache productCatalogCache;
     @Autowired ProductCatalogItemCache productCatalogItemCache;
+    // T8 ProductAttribute is repo-backed (no cache) — service + EMF injected for the N+1 query-count proof.
+    @Autowired org.openboxes.catalog.service.ProductAttributeService productAttributeService;
+    @Autowired jakarta.persistence.EntityManagerFactory emf;
 
     private static final String TEST_SECRET = "test-secret-32-chars-minimum-for-hs256-key";
 
@@ -374,6 +380,74 @@ class CatalogServiceIntegrationTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.length()").value(3));
         assertThat(productCatalogItemCache.getAll()).hasSize(3);
+    }
+
+    // ---------------------------------------------------------------
+    // ProductAttribute (T8) — GET-only repo-backed read entity (zero React callers). NO cache
+    // (Grails domain has no `cache true`), NO audit columns (live table + Grails domain have none).
+    // No sibling writers (GET-only) → count-of-3 assertions are deterministic. Plus the N+1 proof.
+    // ---------------------------------------------------------------
+
+    @Test void productAttributeList_returnsSeeded() throws Exception {
+        mvc.perform(get("/api/productAttributes").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.length()").value(3))
+            .andExpect(jsonPath("$.data[?(@.id == 'pa-bandage-color')]").exists());
+    }
+
+    @Test void productAttributeGet_flatDto() throws Exception {
+        mvc.perform(get("/api/productAttributes/pa-bandage-size").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.id").value("pa-bandage-size"))
+            .andExpect(jsonPath("$.data.productId").value("p-bandage"))
+            .andExpect(jsonPath("$.data.attributeId").value("attr-size"))
+            .andExpect(jsonPath("$.data.value").value("Large"))
+            .andExpect(jsonPath("$.data.unitOfMeasureId").value("uom-pc"))
+            .andExpect(jsonPath("$.data.productSupplierId").value("ps-bandage-acme"));
+    }
+
+    @Test void productAttributeGet_404OnMissing() throws Exception {
+        mvc.perform(get("/api/productAttributes/pa-nonexistent").cookie(authCookie()))
+            .andExpect(status().isNotFound());
+    }
+
+    @Test void productAttributeGet_dtoFlatness_noNestedFKEntities() throws Exception {
+        // FD#2/FD#3: flat FK strings only — no nested {product:{...}} / {attribute:{...}} /
+        // {unitOfMeasure:{...}} / {productSupplier:{...}}.
+        mvc.perform(get("/api/productAttributes/pa-bandage-size").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.product").doesNotExist())
+            .andExpect(jsonPath("$.data.attribute").doesNotExist())
+            .andExpect(jsonPath("$.data.unitOfMeasure").doesNotExist())
+            .andExpect(jsonPath("$.data.productSupplier").doesNotExist());
+    }
+
+    @Test void productAttributeGet_nullableFksOmittedAsNull() throws Exception {
+        // pa-bandage-color seeds unit_of_measure_id + product_supplier_id NULL: proves the null-FK
+        // proxy maps to a null id string (all 4 FKs are DB-nullable in the live schema). value is read.
+        mvc.perform(get("/api/productAttributes/pa-bandage-color").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.unitOfMeasureId").value(org.hamcrest.Matchers.nullValue()))
+            .andExpect(jsonPath("$.data.productSupplierId").value(org.hamcrest.Matchers.nullValue()))
+            .andExpect(jsonPath("$.data.value").value("Blue"));
+    }
+
+    @Test void productAttributeList_noN1_boundedQueryCount() {
+        // N+1 proof: LAZY FKs + a DTO that reads only .getId() (the proxy id is populated without
+        // initialization → no DB hit) means findAll() emits a SINGLE SELECT regardless of row count.
+        // The assertion is that the JDBC statement count does NOT scale with rows (1, not 1+N). We
+        // deliberately did NOT use @EntityGraph — it would add 4 LEFT JOINs we don't need (we read ids
+        // only). Hibernate statistics are enabled via the @DynamicPropertySource generate_statistics flag.
+        // NOTE: this reads the process-global SessionFactory statistics counter, so it is correct ONLY
+        // while the suite runs single-threaded/sequentially (no parallel test execution is configured).
+        // If @Execution(CONCURRENT)/maxParallelForks is ever enabled, scope the count to one session
+        // (e.g. a StatementInspector) instead of the global counter, or this assertion will go flaky.
+        org.hibernate.stat.Statistics stats =
+            emf.unwrap(org.hibernate.SessionFactory.class).getStatistics();
+        stats.clear();
+        var result = productAttributeService.list();
+        assertThat(result).hasSizeGreaterThanOrEqualTo(2);   // ≥2 rows so a single query proves no fan-out
+        assertThat(stats.getPrepareStatementCount()).isEqualTo(1L);   // exactly ONE JDBC statement for N rows → no N+1
     }
 
     // ---------------------------------------------------------------

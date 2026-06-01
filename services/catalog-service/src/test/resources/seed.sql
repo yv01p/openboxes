@@ -122,3 +122,12 @@ INSERT INTO product_catalog_item (id, version, active, product_id, product_catal
     ('pci-ess-bandage', 0, 1, 'p-bandage', 'pc-essential', NOW(), NOW()),
     ('pci-ess-syringe', 0, 1, 'p-syringe', 'pc-essential', NOW(), NOW()),
     ('pci-trauma-bandage', 0, 0, 'p-bandage', 'pc-trauma', NOW(), NOW());
+
+-- product_attribute (T8). GET-only; NO audit columns. version NOT NULL. value is the scalar payload.
+-- All 4 FKs are DB-nullable (live schema) — pa-*-color rows leave uom/supplier NULL to prove null-FK-id mapping;
+-- pa-bandage-size populates all 4 FKs. attributes_idx left NULL (unmapped Grails list-index artifact).
+-- GET-only, no sibling writers → count assertion of 3 is deterministic.
+INSERT INTO product_attribute (id, version, attribute_id, product_id, value, unit_of_measure_id, product_supplier_id) VALUES
+    ('pa-bandage-color', 0, 'attr-color', 'p-bandage', 'Blue', NULL, NULL),
+    ('pa-bandage-size', 0, 'attr-size', 'p-bandage', 'Large', 'uom-pc', 'ps-bandage-acme'),
+    ('pa-syringe-color', 0, 'attr-color', 'p-syringe', 'Clear', NULL, NULL);
