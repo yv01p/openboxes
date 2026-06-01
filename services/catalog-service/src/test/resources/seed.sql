@@ -150,3 +150,15 @@ INSERT INTO product_component (id, assembly_product_id, component_product_id, qu
     ('pcomp-band-syr', 'p-bandage', 'p-syringe', 2.00, 'uom-pc', 0, NOW(), NOW()),
     ('pcomp-band-iv', 'p-bandage', 'p-iv-drip', 1.00, 'uom-pc', 0, NOW(), NOW()),
     ('pcomp-syr-iv', 'p-syringe', 'p-iv-drip', 3.00, 'uom-pc', 0, NOW(), NOW());
+
+-- unit_of_measure_conversion (T11). GET-only; cache-backed (heuristic); Instant timestamp-only audit.
+-- active bit(1) NOT NULL; conversion_rate decimal(19,8) NOT NULL; from/to UoM both NOT NULL FKs.
+-- Two ACTIVE kg->g rows with different last_updated prove findConversionRate takes the MOST RECENT active
+-- (order by last_updated desc). uconv-kg-g-inactive is active=0 with the LATEST last_updated — proves the
+-- active filter excludes it (findConversionRate('kg','g') must return 1000.50, NOT 999). uconv-g-kg is the
+-- reverse direction. GET-only, no sibling writers -> count assertion of 4 is deterministic.
+INSERT INTO unit_of_measure_conversion (id, version, active, from_unit_of_measure_id, to_unit_of_measure_id, conversion_rate, date_created, last_updated) VALUES
+    ('uconv-kg-g-old', 0, 1, 'uom-kg', 'uom-g', 1000.00000000, '2024-01-01 10:00:00', '2024-01-01 10:00:00'),
+    ('uconv-kg-g-new', 0, 1, 'uom-kg', 'uom-g', 1000.50000000, '2024-02-01 10:00:00', '2024-02-01 10:00:00'),
+    ('uconv-g-kg', 0, 1, 'uom-g', 'uom-kg', 0.00100000, NOW(), NOW()),
+    ('uconv-kg-g-inactive', 0, 0, 'uom-kg', 'uom-g', 999.00000000, '2024-03-01 10:00:00', '2024-03-01 10:00:00');

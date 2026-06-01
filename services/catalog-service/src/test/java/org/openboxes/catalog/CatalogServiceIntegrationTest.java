@@ -7,6 +7,7 @@ import org.openboxes.catalog.cache.ProductCatalogCache;
 import org.openboxes.catalog.cache.ProductCatalogItemCache;
 import org.openboxes.catalog.cache.ProductTypeCache;
 import org.openboxes.catalog.cache.UnitOfMeasureCache;
+import org.openboxes.catalog.cache.UnitOfMeasureConversionCache;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -58,6 +59,10 @@ class CatalogServiceIntegrationTest {
     @Autowired AttributeCache attributeCache;
     @Autowired ProductCatalogCache productCatalogCache;
     @Autowired ProductCatalogItemCache productCatalogItemCache;
+    // T11 UnitOfMeasureConversion is CACHE-backed (heuristic cache per T1 audit §5/§8) — cache cleared
+    // per-test for isolation; the service is injected for the ported conversionRateLookup finder tests.
+    @Autowired UnitOfMeasureConversionCache unitOfMeasureConversionCache;
+    @Autowired org.openboxes.catalog.service.UnitOfMeasureConversionService unitOfMeasureConversionService;
     // T8 ProductAttribute is repo-backed (no cache) — service + EMF injected for the N+1 query-count proof.
     @Autowired org.openboxes.catalog.service.ProductAttributeService productAttributeService;
     @Autowired jakarta.persistence.EntityManagerFactory emf;
@@ -84,6 +89,7 @@ class CatalogServiceIntegrationTest {
         attributeCache.clear();
         productCatalogCache.clear();
         productCatalogItemCache.clear();
+        unitOfMeasureConversionCache.clear();
     }
 
     private String validToken() {
@@ -1294,5 +1300,75 @@ class CatalogServiceIntegrationTest {
         var result = productComponentService.list();
         assertThat(result).hasSizeGreaterThanOrEqualTo(2);   // ≥2 rows so a single query proves no fan-out
         assertThat(stats.getPrepareStatementCount()).isEqualTo(1L);   // exactly ONE JDBC statement for N rows → no N+1
+    }
+
+    // ---------------------------------------------------------------
+    // UnitOfMeasureConversion (T11) — GET-only CACHE-backed read entity (zero React callers; FD#1).
+    // Heuristic cache per the T1 audit §5/§8 (low churn, paired with UnitOfMeasureCache) — mirrors the
+    // T6/T7 cache pattern (NOT the T8/T9/T10 N+1-statistics pattern). Instant timestamp-only audit
+    // (date_created/last_updated NOT NULL); active bit(1) NOT NULL; both UoM FKs NOT NULL. Writes stay
+    // Grails-side (GSP UnitOfMeasureConversionController). No sibling writers (GET-only) → count-of-4 is
+    // deterministic. Plus the ported conversionRateLookup finder (service+repo only, NO REST endpoint).
+    // ---------------------------------------------------------------
+
+    @Test void unitOfMeasureConversionList_returnsSeeded() throws Exception {
+        mvc.perform(get("/api/unitOfMeasureConversions").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.length()").value(4))
+            .andExpect(jsonPath("$.data[?(@.id == 'uconv-kg-g-new')]").exists());
+    }
+
+    @Test void unitOfMeasureConversionGet_flatDto() throws Exception {
+        mvc.perform(get("/api/unitOfMeasureConversions/uconv-kg-g-new").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.id").value("uconv-kg-g-new"))
+            .andExpect(jsonPath("$.data.active").value(true))
+            .andExpect(jsonPath("$.data.fromUnitOfMeasureId").value("uom-kg"))
+            .andExpect(jsonPath("$.data.toUnitOfMeasureId").value("uom-g"))
+            .andExpect(jsonPath("$.data.conversionRate").value(1000.50));
+    }
+
+    @Test void unitOfMeasureConversionGet_404OnMissing() throws Exception {
+        mvc.perform(get("/api/unitOfMeasureConversions/uconv-nonexistent").cookie(authCookie()))
+            .andExpect(status().isNotFound());
+    }
+
+    @Test void unitOfMeasureConversionGet_dtoFlatness_noNestedFKEntities() throws Exception {
+        // FD#2/FD#3: flat FK strings only — no nested {fromUnitOfMeasure:{...}} / {toUnitOfMeasure:{...}}.
+        mvc.perform(get("/api/unitOfMeasureConversions/uconv-kg-g-new").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.fromUnitOfMeasure").doesNotExist())
+            .andExpect(jsonPath("$.data.toUnitOfMeasure").doesNotExist());
+    }
+
+    @Test void unitOfMeasureConversionGet_inactiveRoundTrip() throws Exception {
+        // uconv-kg-g-inactive seeds active=0: proves the bit(1)->Boolean read returns false, not the
+        // constructor default true.
+        mvc.perform(get("/api/unitOfMeasureConversions/uconv-kg-g-inactive").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.active").value(false));
+    }
+
+    @Test void unitOfMeasureConversionCache_refreshOnEmptyServesFromSeed() throws Exception {
+        // Cache cleared in @BeforeEach for test isolation; first call populates + serves.
+        mvc.perform(get("/api/unitOfMeasureConversions").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.length()").value(4));
+        assertThat(unitOfMeasureConversionCache.getAll()).hasSize(4);
+    }
+
+    @Test void findConversionRate_returnsMostRecentActiveRate() {
+        // Ported conversionRateLookup: kg->g has two ACTIVE rows (1000.00 older, 1000.50 newer) plus an
+        // INACTIVE 999 row with the LATEST last_updated. The finder must (a) exclude the inactive row via
+        // the active filter, and (b) pick 1000.50 over 1000.00 via order-by-last_updated-desc. compareTo
+        // (not equals) avoids decimal(19,8) scale brittleness.
+        var rate = unitOfMeasureConversionService.findConversionRate("kg", "g");
+        assertThat(rate).isPresent();
+        assertThat(rate.get().compareTo(new java.math.BigDecimal("1000.50"))).isEqualTo(0);
+    }
+
+    @Test void findConversionRate_emptyWhenNoMatch() {
+        // No kg->dz conversion seeded → Optional.empty.
+        assertThat(unitOfMeasureConversionService.findConversionRate("kg", "dz")).isEmpty();
     }
 }

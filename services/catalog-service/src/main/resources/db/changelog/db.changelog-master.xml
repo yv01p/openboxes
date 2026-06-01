@@ -23,4 +23,5 @@
     <include file="db/changelog/changelog-shadow-create-product-attribute.xml"/>
     <include file="db/changelog/changelog-shadow-create-product-association.xml"/>
     <include file="db/changelog/changelog-shadow-create-product-component.xml"/>
+    <include file="db/changelog/changelog-shadow-create-unit-of-measure-conversion.xml"/>
 </databaseChangeLog>
