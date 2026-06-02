@@ -1,6 +1,6 @@
 # Synthetic-payload blind spot
 
-Lessons from frontend-facing API migrations where test payloads did not match real SPA request/response shapes.
+Lessons from frontend-facing API migrations — proving the migrated contract against **reality**, not against the new code's own expectations: real SPA payload shapes (request + response, RC-43), the full consumer round-trip at cutover (RC-44), and real seeded data for write paths (RC-45).
 
 ## Synthetic-payload blind spot (Phase 5.5)
 
@@ -31,3 +31,25 @@ The regression surfaced only when the migrated contract went live. A design corr
 If the test payloads are synthetic, the plan must be revised to use real SPA shapes before approval.
 
 **Related blind spot:** The catalog integration test harness uses `ddl-auto=create` (regenerates schema from the entity), which can mask schema divergences between Hibernate-generated DDL and the actual production schema. This is a distinct (but related) issue — see `sdd-reviewer-checklist.md` § "JPA inheritance + nullability (Phase 4 RC-1)", § "Schema CHAR/TINYINT divergence (Phase 5 RC-1)". The present lesson focuses specifically on **payload-shape** mismatches (synthetic vs real SPA request/response), not schema mismatches.
+
+## Cutover is a verification task, not wiring (Phase 5.5 RC-44)
+
+A "cutover" (flipping the SPA/nginx seam to the migrated service) is NOT frontend wiring on top of a finished backend — it is a verification task whose job is to prove the COMPLETE consumer round-trip against real payloads and to fix whatever that proof reveals.
+
+**What went wrong**: Phase 5.5 CUT was scoped as "switch the React seam + repoint nginx", on the premise that the T2–T5 ProductSupplier write-cluster was complete. The real-payload ground-truth trace (run BEFORE coding, per the synthetic-payload lesson above) found three gaps the plan assumed didn't exist:
+
+- **LQ2** — the flat list DTO omitted 6 columns the live Grails list serves (`packageSize`/`packagePrice`/`unitPrice` + preferences); the Preference Type column would have crashed on `undefined.length`.
+- **PKG-FIX** — the catalog ProductPackage save was create-only and never linked `defaultProductPackage`, so the form's save→reload round-trip was broken (the form POSTs the package on BOTH create and edit; editing 409'd on the duplicate-tuple check).
+- **Attr load + Jackson** — the form would have fetched the whole `product_attribute` table (no `?productSupplier=` filter), and the package payload carried fields not on `ProductPackageDto`, which catalog's default-strict Jackson (`FAIL_ON_UNKNOWN_PROPERTIES`) rejects with 400.
+
+None were in the plan; all three would have shipped broken under a wiring-only execution.
+
+**Rule**: a cutover/seam-flip task's first step is a real-payload ground-truth trace of the FULL round-trip the consumer drives — load → save → reload → list → edit — against the new service. The task OWNS fixing whatever the trace reveals, including backend gaps the upstream per-entity tasks were assumed to have closed. Plan it as verification-and-remediation, never as wiring. When the "upstream is complete" premise turns out false, re-spec it (a falsified load-bearing assumption is a design defect) rather than patching the cutover task. (Plan-level codification: `plan-template-defects.md` § "Cutover/seam-flip premise".)
+
+## Empty DB hides every write path (Phase 5.5 RC-45)
+
+When the live/dev database has no rows for the entities under test, the write/UI e2e surface self-skips (suite convention), so a skip-heavy "all green" is a FALSE NEGATIVE for write-path correctness — and it can also hide a stale deployed container.
+
+**What went wrong**: `openboxes-db` holds 0 products/suppliers, so the standard ProductSupplier write/UI Playwright specs self-skip. The catalog integration tests (their own `ddl-auto=create` seed) didn't model the form's two-POST save sequence. The PKG-FIX package round-trip was therefore unproven by BOTH green CI surfaces; it was caught only by a self-seeding round-trip e2e (`e2e/tests/catalog-product-supplier-roundtrip.spec.ts`) that seeded a minimal fixture (product/uom/party/preference_type), drove the REAL flat payloads through nginx, asserted `defaultProductPackageId` + derived pricing + preferences + upsert, then self-cleaned. That spec ALSO surfaced that the deployed catalog container was stale (built before LQ2/PKG-FIX).
+
+**Rule**: for any write-path migration verified against an empty live DB, a self-seeding round-trip e2e is MANDATORY — seed a minimal fixture, exercise the real SPA payloads end-to-end through the routing seam, assert the persisted shape, and self-clean. Do NOT accept skip-heavy green as write-path proof; a passing suite where the write specs all skipped has proven nothing about writes. After any backend change, rebuild + recreate the service container before running the round-trip (empty-DB green can mask a stale image).

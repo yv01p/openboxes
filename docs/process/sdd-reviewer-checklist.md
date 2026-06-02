@@ -83,3 +83,11 @@ When a refactor removes a `throws X` from a method signature, audit all calling-
 **Verification**: when reviewing a change that drops `throws X` from method M, grep for callers of M (`grep -rn "M(" --include="*.java"`). For each caller, check whether its own `throws` clause still needs to declare X — and whether the caller's callers transitively still need to.
 
 **Rationale**: Phase 5.1 T10 refactor extracted reflection-using cache-clearing into a helper and de-reflected it. The helper's `throws Exception` signature could be dropped; the calling test method's `throws Exception` was also now stale. The implementer caught the cascade only by being rigorous; the plan didn't prompt the check.
+
+## `@EntityGraph` / `JOIN FETCH` on a `Pageable` collection → in-memory pagination (Phase 5.5 RC-56)
+
+When a paginated repository query (`Page<T>` / takes `Pageable`) eagerly loads a `@OneToMany`/`@ManyToMany` **collection** via `@EntityGraph` or `JOIN FETCH`, Hibernate cannot apply `LIMIT`/`OFFSET` at the SQL level (the join multiplies rows per parent). It silently fetches ALL rows and paginates in memory, emitting `HHH000104: firstResult/maxResults specified with collection fetch; applying in memory`. On a large table this is a latent full-table-scan / OOM, and the warning is easy to miss in a green test run.
+
+**Verification**: for any repository method returning `Page<T>` or taking `Pageable`, check the `@EntityGraph` attributePaths (and any `JOIN FETCH`). `@ManyToOne`/`@OneToOne` paths are safe (no row multiplication); a `@OneToMany`/`@ManyToMany` collection is NOT. If list rows need collection-derived data, load the collection in a SECOND batch query keyed by the page's ids (`findByParentIdIn(ids)`), not via the paginated fetch graph.
+
+**Rationale**: Phase 5.5 LQ2 enriched the ProductSupplier list with preferences. The naive instinct — add `productSupplierPreferences` to the list query's `@EntityGraph` — would have triggered HHH000104 + in-memory pagination. The fix batch-loads preferences via `findByProductSupplierIdIn` over the page's supplier ids, keeping `LIMIT`/`OFFSET` DB-side. The pricing fields (`defaultProductPackage.uom`, `.productPrice`) ARE in the `@EntityGraph` because they're all `@ManyToOne` (no multiplication).
