@@ -536,6 +536,17 @@ class CatalogServiceIntegrationTest {
             .andExpect(jsonPath("$.data[?(@.id == 'pa-bandage-color')]").exists());
     }
 
+    @Test void productAttributeList_filterByProductSupplier_returnsOnlyThatSuppliersRows() throws Exception {
+        // CUT form-load filter: ?productSupplier= returns ONLY that supplier's attribute values, so the
+        // form doesn't fetch+filter the whole table. Of the 3 seeded rows, only pa-bandage-size has
+        // product_supplier_id=ps-bandage-acme (the other two are null-supplier rows → excluded).
+        mvc.perform(get("/api/productAttributes?productSupplier=ps-bandage-acme").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.length()").value(1))
+            .andExpect(jsonPath("$.data[0].id").value("pa-bandage-size"))
+            .andExpect(jsonPath("$.data[0].productSupplierId").value("ps-bandage-acme"));
+    }
+
     @Test void productAttributeGet_flatDto() throws Exception {
         mvc.perform(get("/api/productAttributes/pa-bandage-size").cookie(authCookie()))
             .andExpect(status().isOk())
@@ -586,7 +597,7 @@ class CatalogServiceIntegrationTest {
         org.hibernate.stat.Statistics stats =
             emf.unwrap(org.hibernate.SessionFactory.class).getStatistics();
         stats.clear();
-        var result = productAttributeService.list();
+        var result = productAttributeService.list(null);   // null filter → unfiltered findAll()
         assertThat(result).hasSizeGreaterThanOrEqualTo(2);   // ≥2 rows so a single query proves no fan-out
         assertThat(stats.getPrepareStatementCount()).isEqualTo(1L);   // exactly ONE JDBC statement for N rows → no N+1
     }
@@ -1215,13 +1226,17 @@ class CatalogServiceIntegrationTest {
     @Test void productPackagePost_createsRow_withGeneratedId_andFlatIds() throws Exception {
         // Real flat payload (per C3 lesson): product + productSupplier + uom + quantity.
         // JWT subject ("test-user") populates createdById via JwtAuditorAware (FD#8 Option-A audit proof).
+        // CUT: on the create path the service computes name/description like Grails setPackageData
+        // ("${uom.code}/${qty}" and "${uom.name} of ${qty}") — it does NOT echo a posted name. uom-pc =
+        // code "pc", name "Piece" → name "pc/24", description "Piece of 24".
         String json = "{\"productId\":\"p-bandage\",\"productSupplierId\":\"ps-bandage-acme\"," +
-            "\"uomId\":\"uom-pc\",\"quantity\":24,\"name\":\"Bandage Case\",\"gtin\":\"GTIN-BND-CASE\"}";
+            "\"uomId\":\"uom-pc\",\"quantity\":24,\"gtin\":\"GTIN-BND-CASE\"}";
         mvc.perform(post("/api/productPackages")
                 .content(json).contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.id").isString())
-            .andExpect(jsonPath("$.data.name").value("Bandage Case"))
+            .andExpect(jsonPath("$.data.name").value("pc/24"))
+            .andExpect(jsonPath("$.data.description").value("Piece of 24"))
             .andExpect(jsonPath("$.data.quantity").value(24))
             .andExpect(jsonPath("$.data.productId").value("p-bandage"))
             .andExpect(jsonPath("$.data.productSupplierId").value("ps-bandage-acme"))
@@ -1253,27 +1268,183 @@ class CatalogServiceIntegrationTest {
             .andExpect(jsonPath("$.data[?(@.productSupplierId == 'ps-bandage-acme')]").exists());
     }
 
-    @Test void productPackagePost_duplicateTupleReturns409() throws Exception {
-        // Friendly pre-check (ports the Grails findWhere validator): same
-        // (product, productSupplier, uom, quantity) tuple twice → second is 409 via DuplicatePackageException.
-        String json = "{\"productId\":\"p-bandage\",\"productSupplierId\":\"ps-bandage-acme\"," +
-            "\"uomId\":\"uom-pc\",\"quantity\":48,\"name\":\"Dup Pack\"}";
-        mvc.perform(post("/api/productPackages")
+    @Test void productPackagePost_sameTupleTwice_upsertsInPlace_no409_noNewRow() throws Exception {
+        // CUT: the POST is now an UPSERT (ports Grails setPackageData), not create-only. POSTing the
+        // SAME (productSupplier, uom, quantity) twice does NOT 409 — the second call UPDATES in place
+        // (no new row). Use a dedicated throwaway supplier so the row-count assertion is isolated from
+        // the shared committed DB (this test mutates supplier.defaultProductPackage).
+        String supplierJson = "{\"name\":\"Upsert Supplier\",\"productId\":\"p-bandage\"}";
+        String supplierCreated = mvc.perform(post("/api/productSuppliers")
+                .content(supplierJson).contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andReturn().getResponse().getContentAsString();
+        String supplierId = com.jayway.jsonpath.JsonPath.read(supplierCreated, "$.data.id");
+
+        String json = "{\"productId\":\"p-bandage\",\"productSupplierId\":\"" + supplierId + "\"," +
+            "\"uomId\":\"uom-pc\",\"quantity\":48,\"name\":\"Upsert Pack\",\"productPackagePrice\":7.00}";
+
+        String firstBody = mvc.perform(post("/api/productPackages")
                 .content(json).contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
-            .andExpect(status().isOk());
-        mvc.perform(post("/api/productPackages")
-                .content(json).contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
-            .andExpect(status().isConflict());  // 409 via DuplicatePackageException → GlobalExceptionHandler
+            .andExpect(status().isOk())
+            .andReturn().getResponse().getContentAsString();
+        String firstId = com.jayway.jsonpath.JsonPath.read(firstBody, "$.data.id");
+
+        // Second POST of the same tuple but a CHANGED price → no 409, SAME package id (update in place).
+        String json2 = "{\"productId\":\"p-bandage\",\"productSupplierId\":\"" + supplierId + "\"," +
+            "\"uomId\":\"uom-pc\",\"quantity\":48,\"name\":\"Upsert Pack\",\"productPackagePrice\":9.00}";
+        String secondBody = mvc.perform(post("/api/productPackages")
+                .content(json2).contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
+            .andExpect(status().isOk())  // NOT 409 — upsert, not create-only
+            .andReturn().getResponse().getContentAsString();
+        String secondId = com.jayway.jsonpath.JsonPath.read(secondBody, "$.data.id");
+        assertThat(secondId).isEqualTo(firstId);  // same row, no new id generated
+
+        // The supplier has exactly ONE package for this (uom, quantity) tuple — no duplicate row.
+        mvc.perform(get("/api/productPackages?productSupplier=" + supplierId).cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.length()").value(1))
+            .andExpect(jsonPath("$.data[0].id").value(firstId));
+
+        // The price reflects the SECOND POST (updated in place). productPriceId is unchanged (same row).
+        String priceId = com.jayway.jsonpath.JsonPath.read(secondBody, "$.data.productPriceId");
+        assertThat(priceId).isEqualTo(
+            (String) com.jayway.jsonpath.JsonPath.read(firstBody, "$.data.productPriceId"));
+        mvc.perform(get("/api/productPrices/" + priceId).cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.price").value(9.00));
     }
 
-    @Test void productPackagePost_missingNotNullQuantity_returns409() throws Exception {
-        // DB backstop via C2: quantity is the genuinely NOT-NULL column (product is NULLABLE — see
-        // ProductPackage header deviation note). Omitting quantity → DataIntegrityViolationException → 409.
-        String json = "{\"productId\":\"p-bandage\",\"productSupplierId\":\"ps-bandage-acme\"," +
-            "\"uomId\":\"uom-pc\",\"name\":\"No Quantity\"}";
+    @Test void productPackagePost_linksDefaultPackage_visibleOnSupplierGetAndList() throws Exception {
+        // CUT core bug fix: after POSTing a package, the supplier's defaultProductPackageId == the new
+        // package id (the link is established on BOTH create and update paths), AND the LQ2 list shows
+        // the row's derived packageSize/packagePrice populated (proves the default-link is visible).
+        // Dedicated supplier (this mutates supplier state); filter the list by it to assert deterministically.
+        String supplierJson = "{\"name\":\"Default Link Supplier\",\"productId\":\"p-bandage\"," +
+            "\"supplierName\":\"DLS\"}";
+        String supplierCreated = mvc.perform(post("/api/productSuppliers")
+                .content(supplierJson).contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andReturn().getResponse().getContentAsString();
+        String supplierId = com.jayway.jsonpath.JsonPath.read(supplierCreated, "$.data.id");
+
+        // uom-pc has code "pc"; quantity 6 → packageSize "pc/6"; price 12.00 → packagePrice 12.00.
+        String json = "{\"productId\":\"p-bandage\",\"productSupplierId\":\"" + supplierId + "\"," +
+            "\"uomId\":\"uom-pc\",\"quantity\":6,\"name\":\"Linked Pack\",\"productPackagePrice\":12.00}";
+        String body = mvc.perform(post("/api/productPackages")
+                .content(json).contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andReturn().getResponse().getContentAsString();
+        String packageId = com.jayway.jsonpath.JsonPath.read(body, "$.data.id");
+
+        // GET supplier → defaultProductPackageId == the new package id (the link was established).
+        mvc.perform(get("/api/productSuppliers/" + supplierId).cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.defaultProductPackageId").value(packageId));
+
+        // LQ2 list → the row's derived packageSize / packagePrice are populated from the linked default.
+        mvc.perform(get("/api/productSuppliers?product=p-bandage").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data[?(@.id == '" + supplierId + "')].packageSize").value("pc/6"))
+            .andExpect(jsonPath("$.data[?(@.id == '" + supplierId + "')].packagePrice").value(12.00));
+    }
+
+    @Test void productPackagePost_changedPrice_updatesExistingProductPriceRow() throws Exception {
+        // CUT: re-POST with a CHANGED price updates the EXISTING ProductPrice in place (no duplicate
+        // package, same productPriceId — the price row is reused, not leaked). Dedicated supplier.
+        String supplierJson = "{\"name\":\"Price Update Supplier\",\"productId\":\"p-bandage\"}";
+        String supplierCreated = mvc.perform(post("/api/productSuppliers")
+                .content(supplierJson).contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andReturn().getResponse().getContentAsString();
+        String supplierId = com.jayway.jsonpath.JsonPath.read(supplierCreated, "$.data.id");
+
+        String json1 = "{\"productId\":\"p-bandage\",\"productSupplierId\":\"" + supplierId + "\"," +
+            "\"uomId\":\"uom-pc\",\"quantity\":3,\"productPackagePrice\":2.00}";
+        String body1 = mvc.perform(post("/api/productPackages")
+                .content(json1).contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andReturn().getResponse().getContentAsString();
+        String priceId1 = com.jayway.jsonpath.JsonPath.read(body1, "$.data.productPriceId");
+
+        String json2 = "{\"productId\":\"p-bandage\",\"productSupplierId\":\"" + supplierId + "\"," +
+            "\"uomId\":\"uom-pc\",\"quantity\":3,\"productPackagePrice\":3.50}";
+        String body2 = mvc.perform(post("/api/productPackages")
+                .content(json2).contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andReturn().getResponse().getContentAsString();
+        String priceId2 = com.jayway.jsonpath.JsonPath.read(body2, "$.data.productPriceId");
+
+        // Same ProductPrice row reused (no duplicate price row leak); the price value was updated.
+        assertThat(priceId2).isEqualTo(priceId1);
+        mvc.perform(get("/api/productPrices/" + priceId2).cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.price").value(3.50));
+
+        // Still exactly one package for the supplier (no duplicate package).
+        mvc.perform(get("/api/productPackages?productSupplier=" + supplierId).cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.length()").value(1));
+    }
+
+    @Test void productPackagePost_contractClear_nullPriceAndDate_clearsContractPriceId() throws Exception {
+        // CUT (contract-clear, ports setContractPriceData case 2): a supplier with a contract price,
+        // re-saved with null contractPricePrice + null contractPriceValidUntil → its contractPriceId
+        // becomes null. Dedicated supplier (mutates contract-price state).
+        String supplierJson = "{\"name\":\"Contract Clear Supplier\",\"productId\":\"p-bandage\"}";
+        String supplierCreated = mvc.perform(post("/api/productSuppliers")
+                .content(supplierJson).contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andReturn().getResponse().getContentAsString();
+        String supplierId = com.jayway.jsonpath.JsonPath.read(supplierCreated, "$.data.id");
+
+        // First POST establishes a contract price.
+        String jsonWithContract = "{\"productId\":\"p-bandage\",\"productSupplierId\":\"" + supplierId + "\"," +
+            "\"uomId\":\"uom-pc\",\"quantity\":4,\"contractPricePrice\":8.00}";
+        mvc.perform(post("/api/productPackages")
+                .content(jsonWithContract).contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
+            .andExpect(status().isOk());
+        mvc.perform(get("/api/productSuppliers/" + supplierId).cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.contractPriceId").isString());
+
+        // Re-POST with NO contract price/date → the contract price is cleared (contractPriceId null).
+        String jsonClear = "{\"productId\":\"p-bandage\",\"productSupplierId\":\"" + supplierId + "\"," +
+            "\"uomId\":\"uom-pc\",\"quantity\":4}";
+        mvc.perform(post("/api/productPackages")
+                .content(jsonClear).contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
+            .andExpect(status().isOk());
+        mvc.perform(get("/api/productSuppliers/" + supplierId).cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.contractPriceId").value(org.hamcrest.Matchers.nullValue()));
+    }
+
+    @Test void productPackagePost_missingQuantity_skipsPackageGracefully_no409() throws Exception {
+        // CUT (null-uom/quantity guard, step 6): the upsert needs a uom AND a quantity to be a real
+        // package. Omitting quantity is NOT an error (the form may submit with no package) — the service
+        // SKIPS package creation/linking gracefully (no junk package, no 409) and returns 200 with a null
+        // package id. This REPLACES the old create-only DB-backstop 409 behavior; the upsert never reaches
+        // a null-quantity INSERT. Use a dedicated supplier so we can assert no default package was linked.
+        String supplierJson = "{\"name\":\"No Quantity Supplier\",\"productId\":\"p-bandage\"}";
+        String supplierCreated = mvc.perform(post("/api/productSuppliers")
+                .content(supplierJson).contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andReturn().getResponse().getContentAsString();
+        String supplierId = com.jayway.jsonpath.JsonPath.read(supplierCreated, "$.data.id");
+
+        String json = "{\"productId\":\"p-bandage\",\"productSupplierId\":\"" + supplierId + "\"," +
+            "\"uomId\":\"uom-pc\"}";
         mvc.perform(post("/api/productPackages")
                 .content(json).contentType(MediaType.APPLICATION_JSON).cookie(authCookie()))
-            .andExpect(status().isConflict());  // 409, not 401/500
+            .andExpect(status().isOk())  // graceful skip — NOT 409
+            .andExpect(jsonPath("$.data.id").value(org.hamcrest.Matchers.nullValue()));
+
+        // No junk package was created/linked for the supplier.
+        mvc.perform(get("/api/productSuppliers/" + supplierId).cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.defaultProductPackageId").value(org.hamcrest.Matchers.nullValue()));
+        mvc.perform(get("/api/productPackages?productSupplier=" + supplierId).cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.length()").value(0));
     }
 
     @Test void productPackageDto_isFlat_noNestedEntities() throws Exception {

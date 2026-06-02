@@ -10,8 +10,8 @@ import java.time.Instant;
 // productPriceId (T5) is the READ-side id of the package's own ProductPrice (the productPrice @ManyToOne).
 //
 // WRITE-ONLY price-VALUE fields (T5): productPackagePrice, contractPricePrice, contractPriceValidUntil.
-// At cutover the React form posts price VALUES (not ids) via buildPackagePayload
-// (useProductSupplierForm.js:265-277): productPackagePrice, contractPricePrice, contractPriceValidUntil.
+// At cutover the React form posts price VALUES (not ids) via buildPackagePayload in
+// useProductSupplierForm.js: productPackagePrice, contractPricePrice, contractPriceValidUntil.
 // These are NOT entity columns — the service (ProductPackageService.save) materializes ProductPrice rows
 // from them. They are write-only: from() always emits null for them (there is nothing to read back from
 // the package entity), so a round-tripped DTO never re-exposes the raw input values.

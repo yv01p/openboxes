@@ -1,6 +1,5 @@
 package org.openboxes.catalog.web;
 
-import org.openboxes.catalog.service.DuplicatePackageException;
 import org.openboxes.catalog.service.DuplicatePreferenceException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ResponseEntity;
@@ -14,8 +13,10 @@ import java.util.Map;
 // Maps catalog write-path failures to honest 4xx IN-DISPATCHER, so the request is never
 // forwarded to /error (which would re-enter the security chain and return a spurious 401 via
 // HttpStatusEntryPoint(UNAUTHORIZED) — see write-contract-reconciliation design §6).
-// Handled set is extended per task as write paths land (T3: DuplicatePreferenceException;
-// T4: DuplicatePackageException).
+// Handled set is extended per task as write paths land (T3: DuplicatePreferenceException).
+// CUT: the ProductPackage POST is now an UPSERT (never creates a duplicate), so the app-layer
+// DuplicatePackageException pre-check was removed; the DB UNIQUE index on product_package remains the
+// cross-instance-race backstop and maps to 409 via the DataIntegrityViolationException handler below.
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
@@ -28,12 +29,6 @@ public class GlobalExceptionHandler {
     // T3: app-layer pair-uniqueness violation for ProductSupplierPreference.
     @ExceptionHandler(DuplicatePreferenceException.class)
     public ResponseEntity<Map<String, String>> duplicatePreference(DuplicatePreferenceException e) {
-        return ResponseEntity.status(409).body(Map.of("error", e.getMessage()));
-    }
-
-    // T4: app-layer tuple-uniqueness violation for ProductPackage (friendly findWhere pre-check).
-    @ExceptionHandler(DuplicatePackageException.class)
-    public ResponseEntity<Map<String, String>> duplicatePackage(DuplicatePackageException e) {
         return ResponseEntity.status(409).body(Map.of("error", e.getMessage()));
     }
 

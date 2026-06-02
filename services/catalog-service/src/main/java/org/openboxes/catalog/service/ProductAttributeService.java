@@ -25,7 +25,13 @@ public class ProductAttributeService {
         return repo.findById(id).map(ProductAttributeDto::from);
     }
 
-    public List<ProductAttributeDto> list() {
-        return repo.findAll().stream().map(ProductAttributeDto::from).toList();
+    // Optional productSupplier filter: the CUT form-load passes a supplier id to fetch ONLY that
+    // supplier's attribute values (avoids shipping the whole product_attribute table to the client).
+    // Null/absent → unfiltered list (the GET-only entity's default).
+    public List<ProductAttributeDto> list(String productSupplierId) {
+        List<org.openboxes.catalog.entity.ProductAttribute> rows = productSupplierId == null
+            ? repo.findAll()
+            : repo.findByProductSupplierId(productSupplierId);
+        return rows.stream().map(ProductAttributeDto::from).toList();
     }
 }
