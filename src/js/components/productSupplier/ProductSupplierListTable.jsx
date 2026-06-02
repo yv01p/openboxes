@@ -57,7 +57,7 @@ const ProductSupplierListTable = ({ filterParams }) => {
     },
     {
       Header: <Translate id="react.productSupplier.column.productCode.label" defaultMessage="Product Code" />,
-      accessor: 'product.productCode',
+      accessor: 'productCode',
       width: 80,
       headerClassName: 'text-wrap text-left pl-1',
       className: 'pl-1',
@@ -65,7 +65,9 @@ const ProductSupplierListTable = ({ filterParams }) => {
     },
     {
       Header: <Translate id="react.productSupplier.column.productName.label" defaultMessage="Product Name" />,
-      accessor: 'product.name',
+      accessor: 'productName',
+      // productName is NOT in the LQ sortable allowlist (falls back to dateCreated) — no sorting.
+      sortable: false,
       minWidth: 400,
       fixed: 'left',
       Cell: (row) =>
@@ -74,7 +76,7 @@ const ProductSupplierListTable = ({ filterParams }) => {
             {...row}
             tooltip
             openLinkInNewTab
-            link={INVENTORY_ITEM_URL.showStockCard(row.original.product.id, { activeTab: 4 })}
+            link={INVENTORY_ITEM_URL.showStockCard(row.original.productId, { activeTab: 4 })}
           />
         ),
     },
@@ -99,7 +101,7 @@ const ProductSupplierListTable = ({ filterParams }) => {
       Cell: (row) => (
         <PreferenceTypeColumn
           productSupplierId={row.original.id}
-          productSupplierPreferences={row.original.productSupplierPreferences}
+          preferences={row.original.preferences}
         />
       ),
       minWidth: 180,
@@ -130,7 +132,7 @@ const ProductSupplierListTable = ({ filterParams }) => {
     },
     {
       Header: <Translate id="react.productSupplier.column.supplier.label" defaultMessage="Supplier" />,
-      accessor: 'supplier.displayName',
+      accessor: 'supplierName',
       minWidth: 300,
       Cell: (row) => (
         <TableCell
@@ -164,15 +166,17 @@ const ProductSupplierListTable = ({ filterParams }) => {
       Cell: (row) => (<DateCell {...row} />),
     },
     {
+      // Flat contract has no user names — shows the createdBy id (ACCEPTED degradation).
       Header: <Translate id="react.productSupplier.column.createdBy.label" defaultMessage="Created by" />,
-      accessor: 'createdBy.name',
+      accessor: 'createdById',
       minWidth: 150,
       sortable: false,
       Cell: (row) => (<TableCell {...row} tooltip />),
     },
     {
+      // Flat contract has no user names — shows the updatedBy id (ACCEPTED degradation).
       Header: <Translate id="react.productSupplier.column.updatedBy.label" defaultMessage="Updated by" />,
-      accessor: 'updatedBy.name',
+      accessor: 'updatedById',
       minWidth: 150,
       sortable: false,
       Cell: (row) => (<TableCell {...row} tooltip />),

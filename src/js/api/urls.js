@@ -182,6 +182,16 @@ export const CURRENCIES_OPTIONS = `${API}/unitOfMeasure/currencies`;
 
 // PRODUCT PACKAGE
 export const PRODUCT_PACKAGE_API = `${API}/productPackages`;
+export const PRODUCT_PACKAGE_BY_ID = (id) => `${PRODUCT_PACKAGE_API}/${id}`;
+
+// PRODUCT PRICE (catalog-service flat contract — read package/contract price values on edit path)
+export const PRODUCT_PRICE_API = `${API}/productPrices`;
+export const PRODUCT_PRICE_BY_ID = (id) => `${PRODUCT_PRICE_API}/${id}`;
+
+// PRODUCT ATTRIBUTE (catalog-service GET-only; productSupplier attribute VALUES are read flat here
+// at the edit path and filtered client-side by productSupplierId — the flat productSupplier DTO no
+// longer carries nested attributes after the cutover).
+export const PRODUCT_ATTRIBUTE_API = `${API}/productAttributes`;
 
 // PRODUCT SUPPLIER PREFERENCE
 export const PRODUCT_SUPPLIER_PREFERENCE_API = `${API}/productSupplierPreferences`;

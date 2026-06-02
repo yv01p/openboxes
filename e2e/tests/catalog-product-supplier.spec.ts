@@ -16,7 +16,7 @@ test.describe('catalog-service /api/productSuppliers (T2 full CRUD)', () => {
         expect(Array.isArray(body.data)).toBeTruthy();
     });
 
-    test.skip('POST creates (proves @Version write path), PUT updates, DELETE removes', async ({ request }) => { // PARKED until Phase 5.5 cluster-end cutover re-enables /api/productSuppliers routing to catalog-service (CUT).
+    test('POST creates (proves @Version write path), PUT updates, DELETE removes', async ({ request }) => { // Un-parked at CUT: /api/productSuppliers now routes to catalog-service (self-skips when the DB has no products).
         const cookie = await login(request);
 
         // ProductSupplier POST needs a real product_id FK. Per suite convention (cf.
@@ -72,7 +72,7 @@ test.describe('catalog-service /api/productSuppliers (T2 full CRUD)', () => {
         expect(gone.status()).toBe(404);
     });
 
-    test.skip('GET /api/productSuppliers/export stays on Grails (Rule-3 exemption)', async ({ request }) => { // PARKED until Phase 5.5 cluster-end cutover re-enables /api/productSuppliers routing to catalog-service (CUT).
+    test('GET /api/productSuppliers/export stays on Grails (Rule-3 exemption)', async ({ request }) => { // Un-parked at CUT: catalog now owns /api/productSuppliers, /export is the Rule-3 exemption back to Grails.
         const cookie = await login(request);
         const res = await request.get(`${BASE}/api/productSuppliers/export`, { headers: { Cookie: cookie } });
         // The point is the route is NOT served by catalog-service (which has no /export). It is proxied

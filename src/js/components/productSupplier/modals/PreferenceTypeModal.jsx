@@ -120,32 +120,14 @@ export default PreferenceTypeModal;
 PreferenceTypeModal.propTypes = {
   isOpen: PropTypes.bool.isRequired,
   closeModal: PropTypes.func.isRequired,
+  // Reshaped from the flat LQ2 refs in PreferenceTypeColumn: only the names are read here
+  // (destinationParty name degrades to the id under the flat catalog contract).
   modalData: PropTypes.arrayOf(PropTypes.shape({
     destinationParty: PropTypes.shape({
-      id: PropTypes.string.isRequired,
+      id: PropTypes.string,
       name: PropTypes.string,
-      description: PropTypes.string,
-      code: PropTypes.string,
-      dateCreated: PropTypes.string,
-      lastUpdated: PropTypes.string,
-      partyType: PropTypes.shape({
-        id: PropTypes.string.isRequired,
-        name: PropTypes.string,
-        code: PropTypes.string,
-        partyTypeCode: PropTypes.string,
-      }),
-      roles: PropTypes.arrayOf(PropTypes.shape({
-        id: PropTypes.string,
-        roleType: PropTypes.string,
-        startDate: PropTypes.string,
-        endDate: PropTypes.string,
-      })),
-      sequences: PropTypes.arrayOf(PropTypes.shape({})),
     }),
     preferenceType: PropTypes.shape({
-      id: PropTypes.string.isRequired,
-      dateCreated: PropTypes.string,
-      lastUpdated: PropTypes.string,
       name: PropTypes.string,
     }),
   })).isRequired,

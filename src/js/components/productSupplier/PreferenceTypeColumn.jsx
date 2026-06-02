@@ -3,18 +3,21 @@ import React, { useState } from 'react';
 import _ from 'lodash';
 import PropTypes from 'prop-types';
 import { RiInformationLine } from 'react-icons/ri';
+import { useSelector } from 'react-redux';
 
 import PreferenceTypeModal from 'components/productSupplier/modals/PreferenceTypeModal';
 import Translate from 'utils/Translate';
 
-const getLabel = (productSupplierPreferences) => {
-  if (!productSupplierPreferences.length) {
+// Computes the cell label from the flat LQ2 preference refs. Robust against undefined/empty
+// (the list row may have no preferences at all) — never reads .length on undefined.
+const getLabel = (preferences, resolvePreferenceTypeName) => {
+  if (!preferences?.length) {
     return {
       id: 'react.productSupplier.preferenceType.none.label',
       defaultMessage: 'None',
     };
   }
-  if (productSupplierPreferences.length > 1) {
+  if (preferences.length > 1) {
     return {
       id: 'react.productSupplier.preferenceType.multiple.label',
       defaultMessage: 'Multiple',
@@ -22,16 +25,37 @@ const getLabel = (productSupplierPreferences) => {
       className: 'cell-content',
     };
   }
-  return productSupplierPreferences[0].preferenceType?.name;
+  // Single preference: resolve its preferenceType NAME from the options (client-side).
+  return resolvePreferenceTypeName(preferences[0]?.preferenceTypeId);
 };
 
-const PreferenceTypeColumn = ({ productSupplierPreferences, productSupplierId }) => {
+const PreferenceTypeColumn = ({ preferences, productSupplierId }) => {
   const [preferenceTypeModalData, setPreferenceTypeModalData] = useState([]);
-  const label = getLabel(productSupplierPreferences);
+
+  // preferenceType options ({ id, value, label }) used to resolve a ref's preferenceTypeId -> name.
+  const { preferenceTypeOptions } = useSelector((state) => ({
+    preferenceTypeOptions: state.productSupplier.preferenceTypes,
+  }));
+
+  const resolvePreferenceTypeName = (preferenceTypeId) => {
+    const option = preferenceTypeOptions?.find((type) => type?.id === preferenceTypeId);
+    return option?.label ?? preferenceTypeId;
+  };
+
+  const label = getLabel(preferences, resolvePreferenceTypeName);
+
+  // Reshape the flat refs into the modal's expected shape, resolving preferenceType names from
+  // options. destinationParty name is not available from the flat contract — degrade to the id.
+  const buildModalData = () => (preferences ?? []).map((preference) => ({
+    preferenceType: { name: resolvePreferenceTypeName(preference?.preferenceTypeId) },
+    destinationParty: preference?.destinationPartyId
+      ? { id: preference.destinationPartyId, name: preference.destinationPartyId }
+      : null,
+  }));
 
   const onCellClick = () => {
-    if (productSupplierPreferences.length > 1) {
-      setPreferenceTypeModalData(productSupplierPreferences);
+    if (preferences?.length > 1) {
+      setPreferenceTypeModalData(buildModalData());
     }
   };
 
@@ -67,34 +91,15 @@ const PreferenceTypeColumn = ({ productSupplierPreferences, productSupplierId })
 export default PreferenceTypeColumn;
 
 PreferenceTypeColumn.propTypes = {
-  productSupplierPreferences: PropTypes.arrayOf(PropTypes.shape({
-    destinationParty: PropTypes.shape({
-      id: PropTypes.string.isRequired,
-      name: PropTypes.string,
-      description: PropTypes.string,
-      code: PropTypes.string,
-      dateCreated: PropTypes.string,
-      lastUpdated: PropTypes.string,
-      partyType: PropTypes.shape({
-        id: PropTypes.string.isRequired,
-        name: PropTypes.string,
-        code: PropTypes.string,
-        partyTypeCode: PropTypes.string,
-      }),
-      roles: PropTypes.arrayOf(PropTypes.shape({
-        id: PropTypes.string,
-        roleType: PropTypes.string,
-        startDate: PropTypes.string,
-        endDate: PropTypes.string,
-      })),
-      sequences: PropTypes.arrayOf(PropTypes.shape({})),
-    }),
-    preferenceType: PropTypes.shape({
-      id: PropTypes.string.isRequired,
-      dateCreated: PropTypes.string,
-      lastUpdated: PropTypes.string,
-      name: PropTypes.string,
-    }),
-  })).isRequired,
+  // Flat LQ2 preference refs: { id, preferenceTypeId, destinationPartyId }. May be undefined/empty.
+  preferences: PropTypes.arrayOf(PropTypes.shape({
+    id: PropTypes.string,
+    preferenceTypeId: PropTypes.string,
+    destinationPartyId: PropTypes.string,
+  })),
   productSupplierId: PropTypes.string.isRequired,
+};
+
+PreferenceTypeColumn.defaultProps = {
+  preferences: [],
 };

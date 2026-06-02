@@ -17,6 +17,10 @@ export default {
   getInventoryItem: (productId, lotNumber) => apiClient.get(INVENTORY_ITEM(productId, lotNumber)),
   // TODO: tech debt: Replace by the product api call instead of generic
   getProduct: (id) => apiClient.get(`${GENERIC_API}/product/${id}`),
+  // Phase 5.5 cutover: catalog-service flat Product by-id (`/api/product/{id}`), used ONLY by the
+  // create-from-product path. Distinct from getProduct above (Grails generic, kept for
+  // option-utils).
+  getCatalogProduct: (id) => apiClient.get(`${CATALOG_PRODUCT_API}/${id}`),
   getLatestInventoryCountDate: (productIds) => apiClient.get(`${PRODUCT_API}/getLatestInventoryCountDate`, {
     params: {
       productIds,
