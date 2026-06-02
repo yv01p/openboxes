@@ -42,7 +42,7 @@ All under `docs/` on `main` @ `610941fdc` (clean tree). Consistent, teaching-fri
 | The 5 Grails-challenge themes | ✅ Drafted | In §3 with evidence. This is the lesson's backbone. |
 | Audience level | ⏳ **OPEN** | Do the students already know JPA/Spring? Junior ("what's a microservice?") vs senior (OSIV, saga deferral, JPA collection-pagination). Changes depth + scaffolding. |
 | Keep or abstract the AI-assisted framing | ⏳ **OPEN** | Present as a normal eng project, OR make "AI + human discipline doing the migration" an explicit subject (novel + candidly documented). Big downstream fork. |
-| Shareability of gitignored artifacts | ⏳ **OPEN** | Critical reviews (CDR/CIR) + handoffs are GITIGNORED — the richest "adversarial reviewer caught X" material won't ship with the repo unless deliberately included. |
+| Shareability of gitignored artifacts | ✅ Resolved | Critical reviews (CDR/CIR) **un-ignored + committed at `4ae41f03a`** (51 docs, ~52k words) — the richest "adversarial reviewer caught X" material now ships with the repo. Only `handoffs/` remains gitignored (session scratch). |
 | Read-only case study vs hands-on lab | ⏳ **OPEN** | A lab needs a seeded DB + packaged dev-env (live DB is empty; setup has gotchas). Read-only lessons need nothing extra. |
 | Number/scope of lessons | 🔄 Sketched | User said "a couple". Candidate shapes in §3. |
 | Actually drafting the lessons | ⏳ Pending | Deferred by user ("when the moment comes"). |
@@ -99,7 +99,7 @@ Counts from the corpus survey (docs mentioning, excluding gitignored criticalrev
 |---------|-----|------------|
 | Dumping raw retros at students | Written for practitioners mid-flight; dense jargon (FD#9, RC-26, A12, entity names) | Scaffold: big-picture-first, glossary, simplified excerpts |
 | Framing it as "AI can't do Grails" | False + not useful | Use the §3a reframe: Grails is structurally hard; verification disciplines are the cure |
-| Promising the richest reviewer examples | CDR/CIR are gitignored (§6) | Either un-ignore deliberately, or stick to retro/process-doc evidence |
+| ~~Promising the richest reviewer examples~~ (RESOLVED) | ~~CDR/CIR are gitignored~~ — now tracked at `4ae41f03a` | CDR/CIR reviews are in the repo; cite them freely as teaching material |
 | Promising a hands-on lab cheaply | Live DB empty + dev-env gotchas | Lab needs a seeded fixture + packaged env; scope deliberately |
 
 ## 4. Delta — Changes Made This Session
@@ -113,7 +113,7 @@ Only artifact created for THIS topic: this brief (`docs/lessons/2026-06-02_04-00
 3. **Decide scope**: one Grails-focused lesson, or the 2-lesson pair in §3d.
 4. **Draft** against the §6 corpus index. Pull real GORM snippets from `grails-app/` and the matching JPA entities from `services/` for the before/after translations (Theme 3).
 5. **Build the portable student checklist** (Theme 1/2 habits) — the most transferable artifact for students with their own Grails app.
-6. **Watch for**: over-density (scaffold!), and the gitignored-artifact trap (don't cite CDR/CIR content the shared repo won't contain).
+6. **Watch for**: over-density (scaffold!). (The former gitignored-CDR/CIR caveat is resolved — they're tracked at `4ae41f03a`.)
 
 ## 6. Artifacts & References (the full source index)
 
@@ -131,6 +131,6 @@ Only artifact created for THIS topic: this brief (`docs/lessons/2026-06-02_04-00
 
 **Milestones**: phase tags `phase-0-foundations` → `phase-5.5-catalog-deferred` (10 tags); 255 commits on `main`.
 
-**⚠️ NOT in shareable git history (gitignored)**: `docs/criticalreviews/` (CDR/CIR adversarial reviews — richest "reviewer caught X" material) and `handoffs/` (session-continuity docs). Decide deliberately whether to include any of these with student materials.
+**`docs/criticalreviews/` — now TRACKED** (un-ignored + committed at `4ae41f03a`; 51 CDR/CIR adversarial reviews, ~52k words, one or more per phase design + plan). The richest "reviewer caught X" teaching material; ships with the repo. **Still gitignored**: only `handoffs/` (session-continuity scratch — intentionally excluded).
 
 **Project memory**: `CLAUDE.md`. **This brief**: `docs/lessons/2026-06-02_04-00-58_grails-migration-teaching-brief.md`.
