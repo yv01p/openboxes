@@ -983,6 +983,74 @@ class CatalogServiceIntegrationTest {
     }
 
     // ---------------------------------------------------------------
+    // Task LQ2 — enriched list-item columns the live Grails list serves but the flat ProductSupplierDto
+    // lacked: derived packageSize/packagePrice/unitPrice (transient getters on ProductSupplier.groovy)
+    // + a per-row flat preferences list. Asserts the REAL list-page response shape (not a synthetic one).
+    // ---------------------------------------------------------------
+
+    @Test void productSupplierList_withDefaultPackage_carriesDerivedPricingFields() throws Exception {
+        // ps-lq-syringe-globex has a DEFAULT package (pp-lq-syringe-box: uom-pc code "pc", quantity 12,
+        // product price 12.0000). Mirrors the Grails getters:
+        //   packageSize  = "pc/12"            (uom.code "/" quantity)
+        //   packagePrice = 12.00              (price.setScale(2, HALF_UP))
+        //   unitPrice    = 1.00               ((price / quantity).setScale(2, HALF_UP) = 12/12)
+        // It is a flat row — no nested defaultProductPackage object leaks (FD#2).
+        mvc.perform(get("/api/productSuppliers?product=p-syringe").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.length()").value(1))
+            .andExpect(jsonPath("$.data[0].id").value("ps-lq-syringe-globex"))
+            .andExpect(jsonPath("$.data[0].packageSize").value("pc/12"))
+            .andExpect(jsonPath("$.data[0].packagePrice").value(12.00))
+            .andExpect(jsonPath("$.data[0].unitPrice").value(1.00))
+            .andExpect(jsonPath("$.data[0].defaultProductPackage").doesNotExist());
+    }
+
+    @Test void productSupplierList_withoutDefaultPackage_packageSizeNull_pricesZero() throws Exception {
+        // ps-lq-iv-multi / ps-lq-iv-extra have NO default package. The Grails getters return null for
+        // packageSize and 0.0 for both prices in that case — we mirror that exactly (packageSize is the
+        // JSON null, prices are 0.00, never null).
+        mvc.perform(get("/api/productSuppliers?product=p-iv-drip&sort=name&order=asc").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.length()").value(2))
+            // first row (name asc) = ps-lq-iv-extra
+            .andExpect(jsonPath("$.data[0].id").value("ps-lq-iv-extra"))
+            // Spring Boot's default Jackson serializes nulls, so packageSize is present-but-null
+            // (the field exists with a JSON null) — assert nullValue(), not doesNotExist().
+            .andExpect(jsonPath("$.data[0].packageSize").value(org.hamcrest.Matchers.nullValue()))
+            .andExpect(jsonPath("$.data[0].packagePrice").value(0.00))
+            .andExpect(jsonPath("$.data[0].unitPrice").value(0.00));
+    }
+
+    @Test void productSupplierList_carriesPreferenceRefsForSupplierWithPreferences() throws Exception {
+        // ps-lq-iv-multi has TWO preferences (psp-lq-iv-default → pref-type-default,
+        // psp-lq-iv-backup → pref-type-backup), both destinationParty org-globex-placeholder. The list
+        // row must carry a `preferences` array with the FLAT ids per preference (the frontend resolves
+        // the preferenceType/destinationParty NAMES client-side). Filter to product=p-iv-drip and key on
+        // the row id so the assertion is independent of page ordering.
+        mvc.perform(get("/api/productSuppliers?product=p-iv-drip").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data[?(@.id == 'ps-lq-iv-multi')].preferences.length()").value(2))
+            .andExpect(jsonPath(
+                "$.data[?(@.id == 'ps-lq-iv-multi')].preferences[?(@.id == 'psp-lq-iv-default')]"
+                    + ".preferenceTypeId").value("pref-type-default"))
+            .andExpect(jsonPath(
+                "$.data[?(@.id == 'ps-lq-iv-multi')].preferences[?(@.id == 'psp-lq-iv-backup')]"
+                    + ".preferenceTypeId").value("pref-type-backup"))
+            .andExpect(jsonPath(
+                "$.data[?(@.id == 'ps-lq-iv-multi')].preferences[?(@.id == 'psp-lq-iv-default')]"
+                    + ".destinationPartyId").value("org-globex-placeholder"));
+    }
+
+    @Test void productSupplierList_supplierWithoutPreferences_carriesEmptyPreferencesArray() throws Exception {
+        // ps-lq-iv-extra has NO preferences → the row carries an EMPTY array (not null, not absent), so
+        // the frontend can iterate without a null-guard.
+        mvc.perform(get("/api/productSuppliers?product=p-iv-drip").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data[?(@.id == 'ps-lq-iv-extra')].preferences").isArray())
+            .andExpect(jsonPath("$.data[?(@.id == 'ps-lq-iv-extra')].preferences.length()").value(0));
+    }
+
+    // ---------------------------------------------------------------
     // ProductSupplierPreference batch/CRUD (T3) — backend + integration tests only, reshaped per write-contract design §4
     // ---------------------------------------------------------------
 

@@ -101,8 +101,6 @@ INSERT INTO product_supplier_preference (id, product_supplier_id, destination_pa
 
 -- 1 ProductPackage (T4). Fixture references p-bandage, ps-bandage-acme, uom-pc.
 -- All NOT NULL columns the entity maps are populated: quantity, version, date_created, last_updated.
--- product_price_id is NOT referenced here (the productPrice association is unmapped at T4, so the
--- create-mode schema won't have that column).
 INSERT INTO product_package (id, name, description, gtin, quantity, product_id, uom_id, product_supplier_id, version, date_created, last_updated) VALUES
     ('pp-bandage-box', 'Bandage Box', 'Box of 12 bandages', 'GTIN-BND-BOX', 12, 'p-bandage', 'uom-pc', 'ps-bandage-acme', 0, NOW(), NOW());
 
@@ -110,6 +108,23 @@ INSERT INTO product_package (id, name, description, gtin, quantity, product_id, 
 -- currency_id references seeded uom-pc; from_date/to_date and audit columns are nullable.
 INSERT INTO product_price (id, version, type, price, currency_id, from_date, to_date, date_created, last_updated) VALUES
     ('pp-price-acme', 0, 'DEFAULT_PRICE', 9.9900, 'uom-pc', NULL, NULL, NOW(), NOW());
+
+-- Task LQ2 derived-field fixture. Give the ps-lq-syringe-globex list-query supplier a DEFAULT package
+-- (1:1 default_product_package_id) that carries a uom (uom-pc, code "pc") AND a product price, so the
+-- enriched list response exercises packageSize / packagePrice / unitPrice with KNOWN values:
+--   packageSize = "pc/12"  (uom.code "/" quantity)
+--   packagePrice = 12.0000 -> setScale(2,HALF_UP) = 12.00
+--   unitPrice    = 12.00 / 12 = 1.00
+-- ps-lq-iv-multi / ps-lq-iv-extra are LEFT WITHOUT a default package — they exercise the no-package path
+-- (packageSize null, packagePrice/unitPrice 0.00). product_supplier.default_product_package_id and
+-- product_package.product_supplier_id form a circular FK pair, so we INSERT the package referencing the
+-- supplier first, then UPDATE the supplier's default_product_package_id (mirrors the base_uom_id pattern
+-- at lines 12-13). price is decimal(19,4); a price that divides evenly by quantity keeps unitPrice exact.
+INSERT INTO product_price (id, version, type, price, currency_id, from_date, to_date, date_created, last_updated) VALUES
+    ('pp-price-lq-syringe', 0, 'DEFAULT_PRICE', 12.0000, 'uom-pc', NULL, NULL, NOW(), NOW());
+INSERT INTO product_package (id, name, description, gtin, quantity, product_id, uom_id, product_supplier_id, product_price_id, version, date_created, last_updated) VALUES
+    ('pp-lq-syringe-box', 'Syringe Box', 'Box of 12 syringes', 'GTIN-SYR-BOX', 12, 'p-syringe', 'uom-pc', 'ps-lq-syringe-globex', 'pp-price-lq-syringe', 0, NOW(), NOW());
+UPDATE product_supplier SET default_product_package_id = 'pp-lq-syringe-box' WHERE id = 'ps-lq-syringe-globex';
 
 -- 2 ProductCatalog (T6). code is NOT NULL UNIQUE; version/date_created/last_updated NOT NULL.
 -- GET-only entity (zero React callers); no sibling writers, so the count assertion of 2 is safe.
