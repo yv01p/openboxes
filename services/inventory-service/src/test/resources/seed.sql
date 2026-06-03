@@ -19,19 +19,23 @@ INSERT INTO inventory (id) VALUES
     ('inv-F1'),
     ('inv-F2');
 
--- inventory_level (id PK; inventory_id + abc_class nullable). F1 -> {A, C, ''}; the '' row must be filtered
--- by the JPQL (abcClass <> ''). F2 -> {D} which must NOT bleed into F1's result (facility scoping).
+-- inventory_level (id PK; inventory_id + abc_class nullable). SORT-DISTINGUISHING fixture: combined with the
+-- mocked global {B, D}, F1 -> {A, D, ''} yields the sorted union [A, B, D], which differs from any insertion
+-- order (catalog-first => [B, D, A]) — so a non-sorting impl (e.g. LinkedHashSet) would FAIL the ordered
+-- assertion. 'D' overlaps the mock (proves dedup); '' must be filtered by the JPQL (abcClass <> ''); F2 -> {C}
+-- must NOT bleed into F1's result (facility scoping — 'C' would slot between B and D if scoping broke).
 INSERT INTO inventory_level (id, inventory_id, abc_class) VALUES
     ('il-F1-A', 'inv-F1', 'A'),
-    ('il-F1-C', 'inv-F1', 'C'),
+    ('il-F1-D', 'inv-F1', 'D'),
     ('il-F1-empty', 'inv-F1', ''),
-    ('il-F2-D', 'inv-F2', 'D');
+    ('il-F2-C', 'inv-F2', 'C');
 
 -- One row each for the 6 repo-less entities so the round-trip exercises every JPA mapping.
 
--- inventory_item: date_created, last_updated NOT NULL.
-INSERT INTO inventory_item (id, date_created, last_updated) VALUES
-    ('ii-1', NOW(), NOW());
+-- inventory_item: date_created, last_updated NOT NULL. lot_number is a distinctive nullable column so the
+-- round-trip can assert a non-id mapping (catches a wrong @Column(name) that a NOT-NULL-only insert would miss).
+INSERT INTO inventory_item (id, lot_number, date_created, last_updated) VALUES
+    ('ii-1', 'LOT9', NOW(), NOW());
 
 -- product_availability: NOT NULL = inventory_item_id, location_id, product_id, product_code, lot_number,
 -- bin_location_name, quantity_on_hand, date_created, last_updated. quantity_not_picked is @Formula
@@ -42,8 +46,9 @@ INSERT INTO product_availability
     ('pa-1', 'ii-1', 'loc-1', 'p-1', 'PC1', 'L1', 'Bin1', 100, 30, NOW(), NOW());
 
 -- `transaction` is a SQL reserved word -> backtick-quoted. NOT NULL = date_created, last_updated, transaction_date.
-INSERT INTO `transaction` (id, date_created, last_updated, transaction_date) VALUES
-    ('tx-1', NOW(), NOW(), NOW());
+-- transaction_number is a distinctive nullable column for the non-id mapping assertion (see inventory_item).
+INSERT INTO `transaction` (id, transaction_number, date_created, last_updated, transaction_date) VALUES
+    ('tx-1', 'TXN9', NOW(), NOW(), NOW());
 
 -- transaction_entry: quantity NOT NULL.
 INSERT INTO transaction_entry (id, quantity) VALUES
