@@ -13,6 +13,7 @@ import org.openboxes.inventory.entity.TransactionSource;
 import org.openboxes.inventory.entity.TransactionType;
 import org.openboxes.inventory.repository.InventoryLevelRepository;
 import org.openboxes.inventory.repository.InventoryRepository;
+import org.openboxes.auth.common.test.JwtTestFixtures;
 import org.openboxes.inventory.service.ProductClassificationService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -35,6 +36,7 @@ import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.equalTo;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
+import static org.openboxes.auth.common.test.JwtTestFixtures.authCookie;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -52,7 +54,7 @@ class InventoryServiceIntegrationTest {
         r.add("spring.datasource.url", mariadb::getJdbcUrl);
         r.add("spring.datasource.username", mariadb::getUsername);
         r.add("spring.datasource.password", mariadb::getPassword);
-        r.add("openboxes.jwt.secret", () -> "test-secret-32-chars-minimum-for-hs256-key");
+        r.add("openboxes.jwt.secret", () -> JwtTestFixtures.TEST_SECRET);
         // TestContainers gives empty DB; Liquibase shadow changelogs MARK_RAN on missing tables, so skip Liquibase and let JPA create.
         r.add("spring.liquibase.enabled", () -> "false");
         r.add("spring.jpa.hibernate.ddl-auto", () -> "create");
@@ -77,25 +79,9 @@ class InventoryServiceIntegrationTest {
     // insertion order — this is what makes list_validFacility actually prove the TreeSet SORT.
     @MockBean CatalogReadClient catalogClient;
 
-    private static final String TEST_SECRET = "test-secret-32-chars-minimum-for-hs256-key";
-
     @BeforeEach
     void stubCatalog() {
         when(catalogClient.distinctAbcClasses(any())).thenReturn(List.of("B", "D"));
-    }
-
-    private String validToken() {
-        var key = io.jsonwebtoken.security.Keys.hmacShaKeyFor(TEST_SECRET.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        return io.jsonwebtoken.Jwts.builder()
-            .subject("test-user")
-            .claim("roles", java.util.List.of("ROLE_BROWSER"))
-            .issuedAt(new java.util.Date())
-            .expiration(new java.util.Date(System.currentTimeMillis() + 3600_000L))
-            .signWith(key).compact();
-    }
-
-    private jakarta.servlet.http.Cookie authCookie() {
-        return new jakarta.servlet.http.Cookie("obx_token", validToken());
     }
 
     // ---------------------------------------------------------------

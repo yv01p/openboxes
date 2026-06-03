@@ -18,6 +18,7 @@ dependencies {
     testImplementation 'org.springframework.security:spring-security-test'
     testImplementation 'org.testcontainers:junit-jupiter:1.21.3'
     testImplementation 'org.testcontainers:mariadb:1.21.3'
+    testImplementation(testFixtures(project(':jwt-auth-common')))
 }
 
 test {

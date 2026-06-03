@@ -13,6 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.openboxes.auth.common.test.JwtTestFixtures;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -21,6 +22,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.openboxes.auth.common.test.JwtTestFixtures.authCookie;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -41,7 +43,7 @@ class CatalogServiceIntegrationTest {
         r.add("spring.datasource.url", mariadb::getJdbcUrl);
         r.add("spring.datasource.username", mariadb::getUsername);
         r.add("spring.datasource.password", mariadb::getPassword);
-        r.add("openboxes.jwt.secret", () -> "test-secret-32-chars-minimum-for-hs256-key");
+        r.add("openboxes.jwt.secret", () -> JwtTestFixtures.TEST_SECRET);
         // TestContainers gives empty DB; Liquibase shadow changelogs MARK_RAN on missing tables, so skip Liquibase and let JPA create.
         r.add("spring.liquibase.enabled", () -> "false");
         r.add("spring.jpa.hibernate.ddl-auto", () -> "create");
@@ -75,8 +77,6 @@ class CatalogServiceIntegrationTest {
     // (reuses the EMF field above). generate_statistics is already enabled in @DynamicPropertySource.
     @Autowired org.openboxes.catalog.service.ProductComponentService productComponentService;
 
-    private static final String TEST_SECRET = "test-secret-32-chars-minimum-for-hs256-key";
-
     // Test-isolation only: caches are @Component singletons shared across tests in this Spring
     // context; clearing them per-test gives each test deterministic state regardless of execution
     // order. Production is NOT affected: OSIV (spring.jpa.open-in-view=true, Spring Boot 3.x
@@ -108,20 +108,6 @@ class CatalogServiceIntegrationTest {
             mvc.perform(delete("/api/category/" + id).cookie(authCookie()));  // 204 or 404 — both fine
         }
         createdCategoryIds.clear();
-    }
-
-    private String validToken() {
-        var key = io.jsonwebtoken.security.Keys.hmacShaKeyFor(TEST_SECRET.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        return io.jsonwebtoken.Jwts.builder()
-            .subject("test-user")
-            .claim("roles", java.util.List.of("ROLE_BROWSER"))
-            .issuedAt(new java.util.Date())
-            .expiration(new java.util.Date(System.currentTimeMillis() + 3600_000L))
-            .signWith(key).compact();
-    }
-
-    private jakarta.servlet.http.Cookie authCookie() {
-        return new jakarta.servlet.http.Cookie("obx_token", validToken());
     }
 
     // ---------------------------------------------------------------

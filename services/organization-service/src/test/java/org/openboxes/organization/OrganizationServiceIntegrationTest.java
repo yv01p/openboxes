@@ -1,6 +1,7 @@
 package org.openboxes.organization;
 
 import org.junit.jupiter.api.Test;
+import org.openboxes.auth.common.test.JwtTestFixtures;
 import org.openboxes.organization.service.PartyTypeCache;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -14,6 +15,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.openboxes.auth.common.test.JwtTestFixtures.authCookie;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -30,7 +32,7 @@ class OrganizationServiceIntegrationTest {
         r.add("spring.datasource.url", mariadb::getJdbcUrl);
         r.add("spring.datasource.username", mariadb::getUsername);
         r.add("spring.datasource.password", mariadb::getPassword);
-        r.add("openboxes.jwt.secret", () -> "test-secret-32-chars-minimum-for-hs256-key");
+        r.add("openboxes.jwt.secret", () -> JwtTestFixtures.TEST_SECRET);
         r.add("openboxes.identifier.organization.minSize", () -> "2");
         r.add("openboxes.identifier.organization.maxSize", () -> "3");
         r.add("spring.liquibase.enabled", () -> "false");  // Disable Liquibase to avoid circular dependency with entityManagerFactory
@@ -43,22 +45,6 @@ class OrganizationServiceIntegrationTest {
 
     @Autowired MockMvc mvc;
     @Autowired PartyTypeCache cache;
-
-    private static final String TEST_SECRET = "test-secret-32-chars-minimum-for-hs256-key";
-
-    private String validToken() {
-        var key = io.jsonwebtoken.security.Keys.hmacShaKeyFor(TEST_SECRET.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        return io.jsonwebtoken.Jwts.builder()
-            .subject("test-user")
-            .claim("roles", java.util.List.of("ROLE_BROWSER"))
-            .issuedAt(new java.util.Date())
-            .expiration(new java.util.Date(System.currentTimeMillis() + 3600_000L))
-            .signWith(key).compact();
-    }
-
-    private jakarta.servlet.http.Cookie authCookie() {
-        return new jakarta.servlet.http.Cookie("obx_token", validToken());
-    }
 
     @Test void readById_returns200() throws Exception {
         mvc.perform(get("/api/organization/org-acme").cookie(authCookie()))

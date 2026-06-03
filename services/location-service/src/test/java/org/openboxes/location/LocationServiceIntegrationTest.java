@@ -1,6 +1,7 @@
 package org.openboxes.location;
 
 import org.junit.jupiter.api.Test;
+import org.openboxes.auth.common.test.JwtTestFixtures;
 import org.openboxes.location.service.LocationTypeCache;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -13,6 +14,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.openboxes.auth.common.test.JwtTestFixtures.authCookie;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -29,7 +31,7 @@ class LocationServiceIntegrationTest {
         r.add("spring.datasource.url", mariadb::getJdbcUrl);
         r.add("spring.datasource.username", mariadb::getUsername);
         r.add("spring.datasource.password", mariadb::getPassword);
-        r.add("openboxes.jwt.secret", () -> "test-secret-32-chars-minimum-for-hs256-key");
+        r.add("openboxes.jwt.secret", () -> JwtTestFixtures.TEST_SECRET);
         r.add("spring.liquibase.enabled", () -> "false");  // Disable Liquibase to avoid circular dependency with entityManagerFactory
         r.add("spring.jpa.hibernate.ddl-auto", () -> "create");  // TestContainers gives empty DB; let JPA create schema
         // create runs BEFORE data.sql by default; defer keeps the seed load until after Hibernate has emitted the schema.
@@ -40,26 +42,6 @@ class LocationServiceIntegrationTest {
 
     @Autowired MockMvc mvc;
     @Autowired LocationTypeCache cache;
-
-    private static final String TEST_SECRET = "test-secret-32-chars-minimum-for-hs256-key";
-
-    // Helper: generate valid JWT cookie value (location-service's JwtService omits issue(); use jjwt directly here)
-    private String validToken() {
-        var key = io.jsonwebtoken.security.Keys.hmacShaKeyFor(TEST_SECRET.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        return io.jsonwebtoken.Jwts.builder()
-            .subject("test-user-id")
-            .claim("loc", "loc-depot-a")
-            .claim("roles", java.util.List.of("ROLE_BROWSER"))
-            .issuedAt(new java.util.Date())
-            .expiration(new java.util.Date(System.currentTimeMillis() + 3600_000L))
-            .signWith(key)
-            .compact();
-    }
-
-    // Helper: attach cookie to MockMvc request
-    private jakarta.servlet.http.Cookie authCookie() {
-        return new jakarta.servlet.http.Cookie("obx_token", validToken());
-    }
 
     // Example test body (others follow the same pattern):
     @Test void readById_returns200() throws Exception {
