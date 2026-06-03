@@ -29,6 +29,9 @@ INSERT INTO product (id, version, name, abc_class, date_created, last_updated) V
 -- Facility-scoped abc classes. inventory_id '1' is Main Warehouse's inventory (location id '1'); inventory
 -- '2' has no location pointing at it, so its 'Z' must NOT appear in facility 1's result (scoping proof).
 -- '' must be filtered by the <> '' guard. Minimal inventory_level row: NOT-NULL-without-default = id, version.
+-- PRECONDITION: inventory rows '1' and '2' (+ location '1' "Main Warehouse" inventory_id='1') are created by
+-- the Grails BootStrap demo data (install/changelog-insert-data.groovy), so the inventory_level.inventory_id
+-- FK resolves on a fresh CI DB. If that demo dataset ever changes, this INSERT FK-fails loudly (intended).
 INSERT INTO inventory_level (id, version, inventory_id, abc_class) VALUES
     ('rc16-il-F1-A',     0, '1', 'A'),
     ('rc16-il-F1-D',     0, '1', 'D'),
