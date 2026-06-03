@@ -3,4 +3,12 @@
                    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
                        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.20.xsd">
+    <include file="db/changelog/changelog-shadow-create-inventory.xml"/>
+    <include file="db/changelog/changelog-shadow-create-inventory_item.xml"/>
+    <include file="db/changelog/changelog-shadow-create-inventory_level.xml"/>
+    <include file="db/changelog/changelog-shadow-create-product_availability.xml"/>
+    <include file="db/changelog/changelog-shadow-create-transaction.xml"/>
+    <include file="db/changelog/changelog-shadow-create-transaction_entry.xml"/>
+    <include file="db/changelog/changelog-shadow-create-transaction_type.xml"/>
+    <include file="db/changelog/changelog-shadow-create-transaction_source.xml"/>
 </databaseChangeLog>
