@@ -1,3 +1,5 @@
+apply plugin: 'java-test-fixtures'
+
 dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-security'
     implementation 'io.jsonwebtoken:jjwt-api:0.12.5'
@@ -11,6 +13,10 @@ dependencies {
     // to compile, not redistributed (consumers' web starter supplies it at
     // runtime). Version managed by Spring Boot BOM.
     compileOnly 'jakarta.servlet:jakarta.servlet-api'
+
+    // Test-fixtures: shared JWT test helper for consumer integration tests (RC-61).
+    testFixturesImplementation 'io.jsonwebtoken:jjwt-api:0.12.5'   // Jwts.builder()/Keys at fixture-compile
+    testFixturesCompileOnly 'jakarta.servlet:jakarta.servlet-api'  // jakarta.servlet.http.Cookie; consumers supply at runtime
 }
 
 // Library subproject — no main() class; disable bootJar to avoid
