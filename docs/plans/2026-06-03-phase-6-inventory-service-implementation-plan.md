@@ -177,6 +177,8 @@ DESCRIBE-first against the live dev DB invalidated **PA19** and the spec's **V1/
   - `location` row present **with** `inventory_id` → union global `Product.abcClass` ∪ facility-scoped `InventoryLevel.abcClass` for that inventory id.
 - **T6/T7 seeds:** must seed a `location` row (with `inventory_id`) for the tested facility, since resolution now reads `location`.
 
+**Second empirical correction (T5 real-container e2e, 2026-06-03):** the plan's T4 Step 9 claim that *"the default Spring 500 on the unhandled `IllegalArgumentException` preserves the existing error contract"* is **FALSE in the real servlet container.** An unhandled exception triggers an internal `ERROR` dispatch to `/error`, which `SecurityConfig`'s `anyRequest().authenticated()` re-intercepts (the error dispatch isn't re-authenticated) → the client gets **401, masking the real 500**. Grails returns **500** for an invalid facility (A11/V5). **Fix (applied):** add `.dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()` to inventory-service `SecurityConfig` so unhandled exceptions surface their true status. Verified live: invalid facility → 500, valid → 200, no-token → 401 (auth still enforced). **Note for T6:** a MockMvc test asserting `status 500` may PASS even without this fix (MockMvc does not replicate the container's error-dispatch-through-security), so the invalid-facility 500 must be proven against the **real container** (T7/T9), not only MockMvc (synthetic-payload-blind-spot). Potential latent same-issue in catalog-service SecurityConfig (identical clone) — flagged for T10 retro, not fixed under Phase 6.
+
 ---
 
 ## Tasks
