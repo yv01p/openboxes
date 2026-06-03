@@ -1,5 +1,6 @@
 package org.openboxes.identity.security;
 
+import jakarta.servlet.DispatcherType;
 import org.springframework.context.annotation.*;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -17,6 +18,10 @@ public class SecurityConfig {
         http
             .csrf(AbstractHttpConfigurer::disable)
             .authorizeHttpRequests(a -> a
+                // Permit the internal ERROR dispatch so an unhandled controller exception surfaces its REAL
+                // status (e.g. 500) instead of being re-intercepted by anyRequest().authenticated() and masked
+                // as 401. Harmonized across all services (Phase 6.1 RC-60); see docs/process/sdd-reviewer-checklist.md.
+                .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
                 .requestMatchers(
                     "/api/identity/login",
                     "/api/identity/signup",

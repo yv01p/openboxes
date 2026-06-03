@@ -1,5 +1,6 @@
 package org.openboxes.document.security;
 
+import jakarta.servlet.DispatcherType;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpStatus;
@@ -17,6 +18,10 @@ public class SecurityConfig {
         http
             .csrf(AbstractHttpConfigurer::disable)
             .authorizeHttpRequests(a -> a
+                // Permit the internal ERROR dispatch so an unhandled controller exception surfaces its REAL
+                // status (e.g. 500) instead of being re-intercepted by anyRequest().authenticated() and masked
+                // as 401. Harmonized across all services (Phase 6.1 RC-60); see docs/process/sdd-reviewer-checklist.md.
+                .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
                 .requestMatchers("/actuator/health", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                 .anyRequest().authenticated())
             .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
