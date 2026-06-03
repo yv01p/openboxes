@@ -37,10 +37,13 @@ INSERT INTO product_group (id, name) VALUES
     ('pg-medical', 'Medical Products');
 
 -- 3 Products
-INSERT INTO product (id, name, product_code, product_type_id, category_id, unit_of_measure_id, active) VALUES
-    ('p-bandage', 'Bandage', 'BND001', 'pt-good', 'cat-medical', 'uom-pc', 1),
-    ('p-syringe', 'Syringe', 'SYR001', 'pt-good', 'cat-medical', 'uom-pc', 1),
-    ('p-iv-drip', 'IV Drip', 'IVD001', 'pt-good', 'cat-supplies', 'uom-pc', 1);
+-- RC-16 (T4): abc_class added. p-bandage='A', p-syringe='B' (2 distinct non-empty),
+-- p-iv-drip=NULL (proves the distinct-abcClass query excludes null). The distinct-set
+-- assertion (productAbcClasses_returnsDistinctNonEmpty) expects exactly [A, B].
+INSERT INTO product (id, name, product_code, product_type_id, category_id, unit_of_measure_id, active, abc_class) VALUES
+    ('p-bandage', 'Bandage', 'BND001', 'pt-good', 'cat-medical', 'uom-pc', 1, 'A'),
+    ('p-syringe', 'Syringe', 'SYR001', 'pt-good', 'cat-medical', 'uom-pc', 1, 'B'),
+    ('p-iv-drip', 'IV Drip', 'IVD001', 'pt-good', 'cat-supplies', 'uom-pc', 1, NULL);
 
 -- 2 Tags
 INSERT INTO tag (id, tag, is_active) VALUES

@@ -183,6 +183,18 @@ class CatalogServiceIntegrationTest {
             .andExpect(jsonPath("$.data.synonyms").doesNotExist());
     }
 
+    // RC-16 (T4): global distinct non-empty Product.abcClass. Seed has p-bandage='A', p-syringe='B'
+    // (2 distinct non-empty) + p-iv-drip=NULL → query must return exactly [A, B] and exclude null/''.
+    @Test void productAbcClasses_returnsDistinctNonEmpty() throws Exception {
+        mvc.perform(get("/api/products/abcClasses").cookie(authCookie()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data").isArray())
+            .andExpect(jsonPath("$.data.length()").value(2))
+            .andExpect(jsonPath("$.data[?(@ == 'A')]").exists())
+            .andExpect(jsonPath("$.data[?(@ == 'B')]").exists())
+            .andExpect(jsonPath("$.data[?(@ == '')]").doesNotExist());
+    }
+
     // ---------------------------------------------------------------
     // Category tree (3)
     // ---------------------------------------------------------------

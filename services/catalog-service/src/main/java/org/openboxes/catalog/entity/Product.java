@@ -42,6 +42,12 @@ public class Product {
     private BigDecimal costPerUnit;
     private Boolean active;
 
+    // RC-16 (T4): distinct abc_class union source for product-classifications. Field+getter only;
+    // ProductDto and other Product consumers are intentionally untouched (varchar(255) abc_class exists,
+    // ddl-auto=validate accepts the addition).
+    @Column(name = "abc_class")
+    private String abcClass;
+
     // FD#9: Product owns the M:N relationship to Tag via product_tag join table
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
@@ -86,6 +92,7 @@ public class Product {
     public BigDecimal getPricePerUnit() { return pricePerUnit; }
     public BigDecimal getCostPerUnit() { return costPerUnit; }
     public Boolean getActive() { return active; }
+    public String getAbcClass() { return abcClass; }
     public Set<Tag> getTags() { return tags; }
     public List<Synonym> getSynonyms() { return synonyms; }
     public Set<ProductGroup> getProductGroups() { return productGroups; }

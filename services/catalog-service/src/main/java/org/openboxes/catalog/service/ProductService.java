@@ -26,4 +26,9 @@ public class ProductService {
     public List<ProductDto> list() {
         return repo.findAll().stream().map(ProductDto::from).toList();
     }
+
+    // RC-16 (T4): global distinct non-empty Product.abcClass. Consumed by inventory-service over HTTP.
+    public java.util.List<String> distinctAbcClasses() {
+        return repo.findDistinctAbcClasses();
+    }
 }
