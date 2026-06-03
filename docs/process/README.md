@@ -9,6 +9,7 @@ Codified lessons accumulated across migration phases. Future plan-writers + SDD 
 - `plan-ordering-rules.md` — task-ordering invariants for plans (compose-modifying ⇒ CI workflow rule + file-conflict rule)
 - `synthetic-payload-blind-spot.md` — verifying frontend-facing migrations against reality: real SPA payload shapes (RC-43), a cutover is a verification task not wiring (RC-44), and an empty DB hides every write path → seeded round-trip mandatory (RC-45)
 - `sdd-controller-practices.md` — SDD controller practices (groundwork before dispatching infra/data-coupled tasks)
+- `phase-decomposition-and-sequencing.md` — how to carve and order the *phases themselves* (decompose by coupling not boundary; verify phase scope vs code; the "N.5 bucket" smell; demand-driven sequencing; name the keystone) — Phase 6.5 analysis
 
 ## How to add a new lesson
 

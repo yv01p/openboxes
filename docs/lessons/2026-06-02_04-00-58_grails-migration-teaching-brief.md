@@ -6,7 +6,7 @@ repository: openboxes
 topic: "Teaching brief — turning the Grails→Spring Boot migration into student lessons (Grails-challenges angle)"
 tags: [handoff, teaching, lessons, grails, gorm, spring-boot, migration, didactics, strangler-fig]
 status: deferred
-last_updated: 2026-06-02
+last_updated: 2026-06-03
 type: teaching_brief
 ---
 
@@ -85,7 +85,7 @@ Counts from the corpus survey (docs mentioning, excluding gitignored criticalrev
 ### 3c. The 2 parked tracks (if the user later wants breadth, not just Grails)
 
 - **Track: Architecture & migration** — strangler-fig, bounded contexts, JWT extraction (jwt-auth-common, Phase 5.1), nginx routing (Rule-3), flat DTOs, schema divergence. Source: parent design + retro TL;DRs.
-- **Track: Engineering process** — spec-driven dev (design→plan→review→implement→retro), forced decisions, A–F RC triage, codify-mid-stream (`docs/process/README.md` §"Codify-mid-stream"), dead-end recovery. Source: process docs + retros.
+- **Track: Engineering process** — spec-driven dev (design→plan→review→implement→retro), forced decisions, A–F RC triage, codify-mid-stream (`docs/process/README.md` §"Codify-mid-stream"), dead-end recovery. Source: process docs + retros. **Centerpiece: §3f — the Phase 6.5 decomposition case study (a real-time worked example of catching a mis-sliced phase).**
 - (**Track: AI-assisted development** is the third — folded into the "open decision" about framing in §2.)
 
 ### 3d. Candidate lesson shapes (sketches, NOT commitments)
@@ -101,6 +101,31 @@ Counts from the corpus survey (docs mentioning, excluding gitignored criticalrev
 | Framing it as "AI can't do Grails" | False + not useful | Use the §3a reframe: Grails is structurally hard; verification disciplines are the cure |
 | ~~Promising the richest reviewer examples~~ (RESOLVED) | ~~CDR/CIR are gitignored~~ — now tracked at `4ae41f03a` | CDR/CIR reviews are in the repo; cite them freely as teaching material |
 | Promising a hands-on lab cheaply | Live DB empty + dev-env gotchas | Lab needs a seeded fixture + packaged env; scope deliberately |
+
+### 3f. Planning-level case study (Phase 6.5 analysis) — "the plan can lie too"
+
+A real-time worked example from the **Phase 6.5 *analysis*** (a deep-dive that never wrote production code): we sat down to brainstorm the next inventory slice and instead discovered the phase plan itself was mis-sliced. This is the **planning-level twin of Theme 1** — *the domain class is not the source of truth* generalizes to ***the phase plan is not the source of truth; the code and its runtime coupling are*** — and it's the most complete process case study in the corpus because we lived the whole arc. It pairs naturally as a second process lesson (alongside the Theme-4 cutover post-mortem), and it directly reinforces the §3a reframe (the *disciplines*, not the AI, are the story).
+
+**The arc (this is the lesson's spine):**
+
+1. **Started from the plan.** The brief was "do restructure (b): move the bulk-import to inventory-service with per-row sync HTTP to catalog for *product create-or-find*" (parent design `docs/specs/2026-05-25-grails-to-spring-boot-migration-design.md:140`; `docs/specs/2026-06-03-phase-6-inventory-service-design.md:243`).
+2. **Read the code; the premise was false.** The named endpoint — `InventoryApiController.importCsv` at `/api/facilities/$facilityId/inventories/import` — does **not** create products; it *rejects* unknown ones (`grails-app/services/org/pih/warehouse/importer/InventoryImportDataService.groovy:59-62` `error.product.notExists`; `:366` `assert product != null`). "Create-or-find" was a **different** endpoint (`/api/products/import` → `ProductApiController.importCsv:339`, a *catalog* concern). The plan conflated two features. → **the second instance** of "design written above the code" (the first: `inventory.warehouse_id`, RC-57). One such error is bad luck; two in one domain is a *method* problem.
+3. **The named slice was entangled and demand-less.** It needs availability-at-date (`InventoryImportDataService.groovy:162` `getAvailableItemsAtDateAsMap`) — the very `ProductAvailabilityService` Phase 6 deliberately kept in Grails (FD#4) — and it has **no React consumer** (GSP-only, wired from `_menu.gsp`). The "gentle first slice" was neither gentle nor pulled by demand.
+4. **Re-decomposed by *coupling*, not boundary.** Tracing what actually couples inventory: `grails-app/domain/org/pih/warehouse/inventory/Transaction.groovy:50` fires `RefreshProductAvailabilityEvent` (+ count + summary) via **GORM lifecycle hooks**. The Phase-6 read/write split cut *straight across* this **keystone** and never named it — which is exactly why "Phase 6.5 = inventory writes" had no tractable first slice.
+5. **Read the keystone's nature (it decides everything).** The refresh is **recompute-from-truth** (`ProductAvailabilityService` `calculateBinLocations` → `saveProductAvailability`), so a Grails/inventory-service **dual-writer transition is safe**; and there is **no process-independent trigger** (`RefreshProductAvailabilityJob` `static triggers = {}`, comment: *"only triggered by persistence event listener"*), so an out-of-process write gets **no refresh** at all.
+6. **Sequenced by *measured* demand.** nginx routing (`docker/nginx/conf.d/app.conf` — only the RC-16 path is on inventory-service) × React's API surface (`src/js/api/urls.js`) × git churn (`git log -- src/js/components/*`) → the plan's *recommended* next phase (Ordering) is **dormant** (`purchaseOrder` last touched 2024-12-12) while the real demand (cycle count 253 commits; stock-movement 1033) sits unmigrated and hard. Cycle count is the largest prize unblockable **without** the saga — and its blocker is exactly the keystone.
+7. **Landed somewhere defensible.** A bounded, dual-writer-safe first slice (`/api/stockAdjustments` write — real React consumer `AdjustInventoryModal.jsx:162` — + the ProductAvailability refresh, proven byte-identical), with an explicit, reasoned "defer the rest" (Ordering/saga until stock-movement pulls it).
+
+**Student takeaways (the transferable rules):**
+
+- **Verify the plan against the code, like you verify the domain class against the live DB.** A phase's scope claims are assumptions; read the endpoints/services it says it will move *before* committing the phase. (Theme 1, one altitude up.)
+- **Decompose by runtime coupling, not org-chart / data-ownership boundaries.** Map what fires when the core entity is written (events, lifecycle hooks, cascade, jobs); slice so a slice owns a *whole* coupling, not half of one.
+- **A "Phase N.5 / the rest of X" bucket is a smell** — a deferral label, not a slice. It hides heterogeneous blockers (here: an *intra-service* refresh keystone vs a *cross-service* saga) under one name.
+- **Sequence by empirically-measured demand** (routing × frontend calls × churn), not the roadmap's stated order.
+- **Name the keystone, and classify every deferred item by blocker type** (keystone-blocked vs saga-blocked).
+- **The discipline works — pull it earlier.** Empirical verification caught both mis-slices before they shipped; the only cost was discovering the inventory one at N.5 instead of at design time.
+
+**Why it teaches well:** it's a live *"the plan was wrong — here's how we caught it and recovered"* narrative, the planning-level counterpart to the §3a reframe. Practitioner-facing version (terse rules): `docs/process/phase-decomposition-and-sequencing.md`.
 
 ## 4. Delta — Changes Made This Session
 
