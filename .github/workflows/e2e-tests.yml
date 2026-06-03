@@ -55,7 +55,7 @@ jobs:
           cache: gradle
       - name: Build identity-service + document-service jars
         working-directory: services
-        run: ./gradlew :identity-service:bootJar :document-service:bootJar :location-service:bootJar :organization-service:bootJar :catalog-service:bootJar
+        run: ./gradlew :identity-service:bootJar :document-service:bootJar :location-service:bootJar :organization-service:bootJar :catalog-service:bootJar :inventory-service:bootJar
       - name: Boot docker compose stack
         working-directory: docker
         run: |
@@ -67,6 +67,7 @@ jobs:
               && docker exec openboxes-location-service curl -sf localhost:8083/actuator/health \
               && docker exec openboxes-organization-service curl -sf localhost:8084/actuator/health \
               && docker exec openboxes-catalog-service curl -sf localhost:8085/actuator/health \
+              && docker exec openboxes-inventory-service curl -sf localhost:8086/actuator/health \
               && [ "$(curl -s -o /dev/null -w '%{http_code}' http://localhost/api/documents)" != "502" ] \
               && break
             sleep 5
@@ -104,6 +105,7 @@ jobs:
           echo "---location-service---" && docker logs openboxes-location-service 2>&1 | tail -100 || true
           echo "---organization-service---" && docker logs openboxes-organization-service 2>&1 | tail -100 || true
           echo "---catalog-service---" && docker logs openboxes-catalog-service 2>&1 | tail -100 || true
+          echo "---inventory-service---" && docker logs openboxes-inventory-service 2>&1 | tail -100 || true
           echo "---nginx---" && docker logs openboxes-nginx 2>&1 | tail -50 || true
       - name: Tear down
         if: always()

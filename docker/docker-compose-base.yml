@@ -127,6 +127,26 @@ services:
         retries: 5
         start_period: 30s
 
+    inventory-service:
+      build:
+        context: ../services/inventory-service
+        dockerfile: Dockerfile
+      container_name: openboxes-inventory-service
+      expose:
+        - "8086"
+      environment:
+        DATASOURCE_URL: ${DATASOURCE_URL:-jdbc:mariadb://db:3306/openboxes?serverTimezone=UTC&useSSL=false}
+        DATASOURCE_USERNAME: ${DATASOURCE_USERNAME:-openboxes}
+        DATASOURCE_PASSWORD: ${DATASOURCE_PASSWORD:-openboxes}
+        OPENBOXES_JWT_SECRET: ${OPENBOXES_JWT_SECRET:-dev-secret-only-for-local-please-rotate-in-prod}
+        CATALOG_SERVICE_URL: ${CATALOG_SERVICE_URL:-http://catalog-service:8085}
+      healthcheck:
+        test: "curl --fail --silent localhost:8086/actuator/health | grep '\"status\":\"UP\"' || exit 1"
+        interval: 10s
+        timeout: 5s
+        retries: 5
+        start_period: 30s
+
     nginx:
       image: nginx:1.13
       container_name: openboxes-nginx
