@@ -127,7 +127,7 @@ Newly introduced by this plan and verified at plan-write time (repo HEAD `478321
 | PA16 | File path | catalog `CatalogServiceIntegrationTest.java` exists (T4 adds a test) | `find` present |
 | PA17 | File path | catalog has `ProductController`/`ProductService`/`ProductRepository`/`entity/Product.java` | `find` all present |
 | PA18 | Signature | catalog `Product` entity does **NOT** map `abcClass` → T4 must add `@Column(name="abc_class") String abcClass` + getter | `Product.java` read (no abcClass field) |
-| PA19 | Signature | `Inventory.warehouse` (belongsTo Location) → DB column `warehouse_id` CHAR(38) | `Inventory.groovy:19,26`; `changelog-create-tables.groovy:3659` `warehouse_id` CHAR(38) (NOTE: absent from the install `inventory` block 708-721 → schema drift; see PA50) |
+| PA19 | Signature | ~~`Inventory.warehouse` (belongsTo Location) → DB column `warehouse_id` CHAR(38)~~ **FALSE — see Plan correction.** The `inventory` table has no `warehouse_id`; the `:3659` evidence is the **`user`** table's column. Real link = `location.inventory_id`. | DESCRIBE `inventory` (live): no `warehouse_id`; `changelog-create-tables.groovy:3645` `createTable(tableName:"user")` then `:3659` `warehouse_id`; DESCRIBE `location` (live): `inventory_id` CHAR(38) present |
 | PA20 | Signature | `InventoryLevel` has `abc_class` VARCHAR(255) + `inventory_id` CHAR(38) (belongsTo Inventory) | `InventoryLevel.groovy:72,81`; install changelog: `inventory_id` + `abc_class` at lines 803/811 |
 | PA21 | Signature | jwt filter = `org.openboxes.auth.common.JwtCookieAuthFilter`; cookie name constant `JwtService.COOKIE_NAME = "obx_token"` | `SecurityConfig.java:11`; `JwtService.java:14` |
 | PA22 | Code-in-plan | CatalogReadClient forwards `Cookie: obx_token=<token>`; inventory controller reads the cookie from the incoming `HttpServletRequest` | `JwtService.COOKIE_NAME = "obx_token"` |
@@ -158,7 +158,24 @@ Newly introduced by this plan and verified at plan-write time (repo HEAD `478321
 5. CatalogReadClient uses Spring `RestClient` (PA48); forwards `obx_token` (user decision).
 6. **TestContainers test uses `ddl-auto=create` (per the proven catalog precedent), not `validate`** — an empty TestContainers MariaDB has no schema to validate against. Live-schema `validate` proof is at T3 smoke-start (dev DB) + T9 compose boot (shared DB). (This corrects the spec T8's literal "ddl-auto=validate in TestContainers" wording.)
 7. `version` columns are left **unmapped** across all 8 entities (read-only; `validate` tolerates extra table columns; matches catalog `Product` which omits `version`). Per-entity divergences (`ProductAvailability` implicit version + `@Formula`; `TransactionSource` `version false` + `accurate` TINYINT + `Instant` timestamps) are resolved by DESCRIBE-first in T3.
-8. RC-16 invalid-facility guard becomes "no `Inventory` for `warehouse_id`" (local resolution, FD#5/V1) rather than Grails' "no `Location`" — behavior-equivalent for every tested and realistic case (invalid facility → 500; a real facility always has an Inventory). Documented in T4.
+8. RC-16 invalid-facility guard becomes "no `Inventory` for `warehouse_id`" (local resolution, FD#5/V1) rather than Grails' "no `Location`" — behavior-equivalent for every tested and realistic case (invalid facility → 500; a real facility always has an Inventory). Documented in T4. **[SUPERSEDED — see Plan correction below: there is no `inventory.warehouse_id`; resolution is via `location.inventory_id`.]**
+
+---
+
+## Plan correction — empirical (T3 DESCRIBE-first, 2026-06-03)
+
+DESCRIBE-first against the live dev DB invalidated **PA19** and the spec's **V1/A16**: the `inventory` table has **no `warehouse_id`** column (its real columns are `id, version, last_inventory_date, date_created, last_updated`). PA19 misattributed the **`user`** table's `warehouse_id` (`changelog-create-tables.groovy:3659`, inside `createTable(tableName: "user")` at :3645) to `inventory`. The real facility→inventory link is **`location.inventory_id`** — a column on the location-context `location` table (confirmed live), matching Grails `ProductClassificationService.list()`, which resolves `Location.read(facilityId).inventory` then filters `InventoryLevel where inventory == facility.inventory`.
+
+**Decision (user-approved): Option B — transitional cross-context native read.** inventory-service resolves the facility's inventory id with one read-only native query `SELECT inventory_id FROM location WHERE id = :facilityId` (no `Location` JPA entity → FD#6 preserved; no shadow changelog / no `validate` coverage for `location`). This matches the parent design's **FD#10** (cross-context readers stay direct-JDBC during transition); it becomes an HTTP call to location-service when that service is fully extracted (Phase 7/8). Tech-debt recorded for the T10 retro.
+
+**Concrete changes (this correction is authoritative over the T3/T4 text below where they conflict):**
+- **T3 `Inventory` entity:** map ONLY `id`, `lastInventoryDate` (`last_inventory_date`), `dateCreated`, `lastUpdated`. **No `warehouseId`.** (`version` left unmapped, as for all 8 entities.)
+- **T4 repository:** replace `InventoryRepository.findByWarehouseId(String)` with a native resolver that returns the facility's `inventory_id` AND lets the service distinguish "no location row" from "location row with null `inventory_id`".
+- **T4 service guard (behavior-preserving — matches Grails exactly):**
+  - facility's `location` row **absent** → throw `IllegalArgumentException` → 500 (invalid facility);
+  - `location` row present but `inventory_id` **IS NULL** → return the **global** `Product.abcClass` set only (skip the `InventoryLevel` query); **no error**;
+  - `location` row present **with** `inventory_id` → union global `Product.abcClass` ∪ facility-scoped `InventoryLevel.abcClass` for that inventory id.
+- **T6/T7 seeds:** must seed a `location` row (with `inventory_id`) for the tested facility, since resolution now reads `location`.
 
 ---
 
@@ -263,7 +280,7 @@ The heaviest task. **DESCRIBE-first against the LIVE dev DB** — the install ch
 
 - [ ] **Step 1: DESCRIBE every table first.** For each of the 8 tables run `SHOW COLUMNS FROM <table>;` (or `DESCRIBE <table>;`) against the live dev DB (Temurin-8 Grails dev DB per `docs/process/dev-env-setup.md`). Record the real column list, types, and nullability. **Do not infer columns from `changelog-create-tables.groovy`** — it omits later-migration columns (e.g. `inventory.warehouse_id`, `transaction_source.accurate`).
 - [ ] **Step 2: Map the 8 entities** following the catalog `Product.java` conventions: `@Entity` + `@Table(name="…")`; `@Id @Column(columnDefinition="CHAR(38)") String id`; cross-context FKs as **flat id columns** (`@Column(name="…_id", columnDefinition="CHAR(38)") String …Id`, NOT `@ManyToOne` to non-owned entities — FD#6); booleans as `Boolean` (TINYINT — RC-1); timestamps as `Instant` (`datetime` columns); getters only (read-only). Per-entity specifics:
-  - **Inventory** (`inventory`): `id`, `warehouseId` (`warehouse_id`), `dateCreated`, `lastUpdated`, `lastInventoryDate` (+ any DESCRIBE surfaces). Do not map `configuredProducts` (collection not inflated — FD#6).
+  - **Inventory** (`inventory`): `id`, `dateCreated`, `lastUpdated`, `lastInventoryDate` (`last_inventory_date`). **No `warehouseId` — the column does not exist** (Plan correction; facility→inventory is resolved via `location.inventory_id` in T4, not on this entity). Do not map `configuredProducts` (collection not inflated — FD#6).
   - **InventoryLevel** (`inventory_level`): `id`, `inventoryId` (`inventory_id`), `abcClass` (`abc_class`), + product/bin FKs and status columns per DESCRIBE.
   - **ProductAvailability** (`product_availability`): flat FKs `productId`/`locationId`/`binLocationId`/`inventoryItemId`; quantity columns; `quantityNotPicked` mapped as `@Formula("quantity_on_hand - quantity_allocated")` (NOT a column — there is no `quantity_not_picked` column; PA24). `id` is `assigned` (no generator needed for a read-only mapping).
   - **Transaction** (`transaction` — SQL reserved word; if `validate`/queries error, use `@Table(name="`transaction`")` with backticks): flat FKs (transaction_type_id, transaction_source_id, inventory_id, etc.) per DESCRIBE. Do not map `transactionEntries` collection.
@@ -333,9 +350,9 @@ A two-service, read-only change. Build the new path; do not delete the Grails or
 
 **Inventory-service side (union + facility-scoping + guard):**
 - [ ] **Step 6: `ProductClassificationDto`** — `public record ProductClassificationDto(String name) {}`.
-- [ ] **Step 7: Repositories**
+- [ ] **Step 7: Repositories** — **NOTE: the `InventoryRepository.findByWarehouseId` below is SUPERSEDED by the Plan correction (Option B).** Replace it with a native resolver against `location` (no `inventory.warehouse_id` exists): e.g. `@Query(value = "select inventory_id from location where id = :facilityId", nativeQuery = true) java.util.Optional<String> findInventoryIdByFacility(@Param("facilityId") String facilityId)` plus an existence check `boolean ... ` (or a query that returns the row so the service can tell "no location" from "null inventory_id"). The `InventoryLevelRepository` below is unchanged.
   ```java
-  // InventoryRepository
+  // InventoryRepository  [SUPERSEDED — see Plan correction: there is no inventory.warehouse_id]
   public interface InventoryRepository extends JpaRepository<Inventory, String> {
       java.util.Optional<Inventory> findByWarehouseId(String warehouseId);
   }
@@ -372,7 +389,7 @@ A two-service, read-only change. Build the new path; do not delete the Grails or
       public record AbcClassesResponse(List<String> data) {}
   }
   ```
-- [ ] **Step 9: `ProductClassificationService`** (union/sort/dedup + invalid-facility guard):
+- [ ] **Step 9: `ProductClassificationService`** (union/sort/dedup + invalid-facility guard). **SUPERSEDED by the Plan correction (Option B):** resolve the facility's inventory id via the native `location.inventory_id` read, and reproduce the exact Grails guard — *no `location` row → 500; `location` row with null `inventory_id` → global-only (no error); else union*. The skeleton below shows the union/sort/dedup shape; the `findByWarehouseId(...).orElseThrow(...)` resolution line is replaced per the correction.
   ```java
   package org.openboxes.inventory.service;
 
