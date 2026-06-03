@@ -136,11 +136,6 @@ class UrlMappings {
             action = [GET: "getLotNumbersWithExpirationDate"]
         }
 
-        "/api/facilities/$facilityId/products/classifications" {
-            controller = "productClassificationApi"
-            action = [GET: "list"]
-        }
-
         "/api/facilities/$facilityId/inventory-levels(.$format)?" {
             controller = "inventoryLevelApi"
             action = [GET: "list"]
