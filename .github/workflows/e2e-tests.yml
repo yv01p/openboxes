@@ -78,6 +78,11 @@ jobs:
         # is intentionally not accepted) and AuthService treats as disabled. T17 review
         # finding; tracked for proper fix in BootStrap.groovy as a T19 back-port item.
         run: docker exec -i openboxes-db mariadb -u root -proot openboxes < docker/init-baseline.sql
+      - name: Apply RC-16 abc_class seed (product-classifications read-through fixture)
+        # RC-16 (Phase 6 T7): the e2e DB is empty of product/inventory_level rows, so seed a non-empty
+        # abc_class union for facility '1' — inventory-product-classifications.spec.ts asserts [A,B,D] and
+        # fails (not skips) if this did not run. Idempotent (rc16-* ids). Must run AFTER init-baseline.
+        run: docker exec -i openboxes-db mariadb -u root -proot openboxes < docker/seed-rc16-abc-class.sql
       - uses: actions/setup-node@v5
         with:
           node-version: '22'
