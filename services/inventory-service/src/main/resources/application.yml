@@ -1,0 +1,29 @@
+server:
+  port: 8086
+spring:
+  application:
+    name: inventory-service
+  datasource:
+    url: ${DATASOURCE_URL}
+    username: ${DATASOURCE_USERNAME}
+    password: ${DATASOURCE_PASSWORD}
+    driver-class-name: org.mariadb.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate.dialect: org.hibernate.dialect.MariaDBDialect
+  liquibase:
+    enabled: true
+    change-log: classpath:db/changelog/db.changelog-master.xml
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+openboxes:
+  jwt:
+    secret: ${OPENBOXES_JWT_SECRET}
+  services:
+    catalog:
+      base-url: ${CATALOG_SERVICE_URL:http://catalog-service:8085}
