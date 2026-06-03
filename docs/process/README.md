@@ -8,6 +8,7 @@ Codified lessons accumulated across migration phases. Future plan-writers + SDD 
 - `plan-template-defects.md` — known defects in plan templates (e.g., T12 done-gate scripts)
 - `plan-ordering-rules.md` — task-ordering invariants for plans (compose-modifying ⇒ CI workflow rule + file-conflict rule)
 - `synthetic-payload-blind-spot.md` — verifying frontend-facing migrations against reality: real SPA payload shapes (RC-43), a cutover is a verification task not wiring (RC-44), and an empty DB hides every write path → seeded round-trip mandatory (RC-45)
+- `sdd-controller-practices.md` — SDD controller practices (groundwork before dispatching infra/data-coupled tasks)
 
 ## How to add a new lesson
 

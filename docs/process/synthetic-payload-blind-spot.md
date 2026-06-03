@@ -53,3 +53,13 @@ When the live/dev database has no rows for the entities under test, the write/UI
 **What went wrong**: `openboxes-db` holds 0 products/suppliers, so the standard ProductSupplier write/UI Playwright specs self-skip. The catalog integration tests (their own `ddl-auto=create` seed) didn't model the form's two-POST save sequence. The PKG-FIX package round-trip was therefore unproven by BOTH green CI surfaces; it was caught only by a self-seeding round-trip e2e (`e2e/tests/catalog-product-supplier-roundtrip.spec.ts`) that seeded a minimal fixture (product/uom/party/preference_type), drove the REAL flat payloads through nginx, asserted `defaultProductPackageId` + derived pricing + preferences + upsert, then self-cleaned. That spec ALSO surfaced that the deployed catalog container was stale (built before LQ2/PKG-FIX).
 
 **Rule**: for any write-path migration verified against an empty live DB, a self-seeding round-trip e2e is MANDATORY — seed a minimal fixture, exercise the real SPA payloads end-to-end through the routing seam, assert the persisted shape, and self-clean. Do NOT accept skip-heavy green as write-path proof; a passing suite where the write specs all skipped has proven nothing about writes. After any backend change, rebuild + recreate the service container before running the round-trip (empty-DB green can mask a stale image).
+
+## Error-status contracts can't be proven by MockMvc (Phase 6 RC-58)
+
+A MockMvc test asserting an error status (e.g. 500 for invalid input) can PASS even when the real servlet container returns a different status — Spring Security re-intercepts the internal `/error` dispatch and can mask the true status as 401 (see `sdd-reviewer-checklist.md` § RC-60). MockMvc does not replicate the container's error-dispatch-through-Spring-Security path.
+
+**Rule**: error-status assertions go at the **service** level (`assertThrows`) or against the **real container** (e2e), never MockMvc-only.
+
+**Rationale**: Phase 6 — RC-16's invalid-facility "default Spring 500" was actually a 401 in the real container; found via T5 real-container e2e, not MockMvc. Bug fixed at `50835b52a`. This generalizes the synthetic-payload blind spot to error paths.
+
+**Verification**: for any test asserting a non-2xx, non-handled status, confirm it runs at service level or against the real container; a MockMvc-only error-status assertion is insufficient proof.

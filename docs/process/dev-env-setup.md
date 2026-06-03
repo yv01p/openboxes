@@ -117,3 +117,22 @@ JAVA_HOME=/usr/lib/jvm/temurin-8-jdk-amd64 ./gradlew test integrationTest
 that variable is global to the user and would force the `services/` Spring Boot build
 onto JDK 8 too (which it cannot use). Scope JDK 8 to the root build via `JAVA_HOME`
 per-invocation, exactly as CI does (separate `setup-java` steps per module).
+
+## `sg docker` for local Playwright + Gradle TestContainers (Phase 6 RC-62)
+
+(Extends "Docker group membership (RC-18)".) Local commands that talk to the docker socket must run under `sg docker -c '...'` when the shell wasn't started with docker-group membership active:
+
+- **Playwright specs that shell out to `docker exec`** (e.g. self-seeding round-trips) fail at their own `execSync('docker exec ...')` helper without it — NOT a product bug. Run: `sg docker -c 'BASE_URL=http://localhost npx playwright test'`.
+- **Gradle TestContainers runs** need `sg docker -c './gradlew --no-daemon ...'` — `--no-daemon` avoids reusing a stale daemon started without docker-group access.
+
+CI runners have docker access, so this is local-only.
+
+## Minimal seed against the live Grails schema (Phase 6 RC-65)
+
+The dev/CI DB is empty of most domain rows, so a non-empty read/round-trip e2e needs a seed. Recipe for a minimal, idempotent seed that survives schema drift:
+
+1. Find the columns you MUST populate: `SELECT column_name FROM information_schema.columns WHERE table_name='<t>' AND is_nullable='NO' AND column_default IS NULL;` — INSERT only those + the field(s) under test.
+2. Make it idempotent: prefix synthetic ids (e.g. `rc16-%`) and `DELETE FROM <t> WHERE id LIKE '<prefix>-%';` before INSERT (delete-first, not UPDATE).
+3. Respect FK preconditions: document which demo rows the seed depends on (it FK-fails loudly if they change).
+
+**Rationale**: Phase 6 T7's RC-16 read-through seed (`docker/seed-rc16-abc-class.sql`) used exactly this; product needed only id/version/name/dates, inventory_level only id/version.

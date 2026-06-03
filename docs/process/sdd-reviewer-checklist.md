@@ -91,3 +91,27 @@ When a paginated repository query (`Page<T>` / takes `Pageable`) eagerly loads a
 **Verification**: for any repository method returning `Page<T>` or taking `Pageable`, check the `@EntityGraph` attributePaths (and any `JOIN FETCH`). `@ManyToOne`/`@OneToOne` paths are safe (no row multiplication); a `@OneToMany`/`@ManyToMany` collection is NOT. If list rows need collection-derived data, load the collection in a SECOND batch query keyed by the page's ids (`findByParentIdIn(ids)`), not via the paginated fetch graph.
 
 **Rationale**: Phase 5.5 LQ2 enriched the ProductSupplier list with preferences. The naive instinct — add `productSupplierPreferences` to the list query's `@EntityGraph` — would have triggered HHH000104 + in-memory pagination. The fix batch-loads preferences via `findByProductSupplierIdIn` over the page's supplier ids, keeping `LIMIT`/`OFFSET` DB-side. The pricing fields (`defaultProductPackage.uom`, `.productPrice`) ARE in the `@EntityGraph` because they're all `@ManyToOne` (no multiplication).
+
+## Changelog evidence misattribution (Phase 6 RC-57)
+
+When a plan or spec cites a changelog/migration line as the origin of a specific column (or other table-scoped attribute), verify the **enclosing `createTable` block**, not the nearest line — and confirm against the live schema with `DESCRIBE <table>`. A line number inside a large generated changelog can sit in a different table's block than the one being attributed.
+
+**Rationale**: Phase 6 PA19/spec-V1/A16 cited `changelog-create-tables.groovy:3659 warehouse_id` as `inventory`'s column; it actually belongs to the `user` table (`createTable(tableName:"user")` opens at `:3644`), and `DESCRIBE inventory` has no `warehouse_id`. The misattribution would have shipped `InventoryRepository.findByWarehouseId(...)`; resolved via Option B (native `location.inventory_id` read).
+
+**Verification**: when a plan cites `<changelog>:<line>` as a column's origin, scroll up to the enclosing `createTable(tableName:"<t>")` and confirm `<t>` is the attributed table; then cite `DESCRIBE <t>` (or `SHOW COLUMNS`) output confirming the column's presence/absence.
+
+## Discriminating-fixture rule (Phase 6 RC-59)
+
+A green test whose fixture's insertion/input order coincides with the expected sorted/transformed output does NOT prove the transform — a no-op (or wrong) implementation would pass identically. For any sort/dedup/filter/merge behavior the reviewer MUST ask: **"could this test pass against a deliberately-broken implementation?"** If yes, the fixture is non-discriminating; require inputs where correct-output ≠ any naive-output.
+
+**Rationale**: Phase 6 T6's first RC-16 fixture mocked global `{A,B}` ∪ facility `{A,C}` → the only natural insertion order `[A,B,C]` equalled the sorted order, so `contains("A","B","C")` couldn't distinguish a `TreeSet` from a `LinkedHashSet`. The fix made it sort-distinguishing (mock `{B,D}` ∪ facility `{A,D}` → sorted `[A,B,D]` ≠ insertion `[B,D,A]`). Commit `0f4b40063`.
+
+**Verification**: for each sort/dedup/filter assertion, confirm the fixture's raw input order differs from the asserted output order (and that duplicates/empties are present when those are filtered), so a non-transforming impl fails.
+
+## New-service SecurityConfig must permit the ERROR dispatch (Phase 6 RC-60)
+
+Every Spring Boot service's `SecurityConfig` MUST include `.dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()` as the first matcher in its `authorizeHttpRequests` block. Spring Security's filter chain re-runs on the internal `/error` forward; without the permit, an unhandled controller exception is re-intercepted by `anyRequest().authenticated()` and masked as a spurious 401 instead of surfacing its real status. A `@RestControllerAdvice` shapes *known* errors but cannot cover exceptions thrown outside controllers (filters/async) — the permit is the universal baseline.
+
+**Rationale**: Phase 6 RC-16's invalid-facility 500 surfaced as 401 until the permit was added (`50835b52a`); catalog/identity/document dodged it only via their GlobalExceptionHandlers, and organization/location were fully exposed. Harmonized across all 6 in Phase 6.1.
+
+**Verification**: when reviewing a new service (or a SecurityConfig change), confirm the ERROR-dispatch permit is present, and assert error-status contracts per `synthetic-payload-blind-spot.md` § "Error-status contracts can't be proven by MockMvc (RC-58)" — not via MockMvc.
